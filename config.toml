@@ -1,0 +1,7 @@
+[cache]
+enable = true
+# redis://username:password@foo.com:6379/1
+# rediss://username:password@foo.com:6379/1
+# redis-cluster://username:password@foo.com:30001?node=bar.com:30002&node=baz.com:30003
+# redis-sentinel://username:password@foo.com:6379/1?sentinelServiceName=fakename&node=foo.com:30001&node=bar.com:30002
+url = 'redis://localhost:6379'
