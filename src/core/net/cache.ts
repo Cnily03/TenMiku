@@ -10,6 +10,21 @@ export class Cache {
     }
   }
 
+  async check() {
+    if (!this.enabled) return false;
+    try {
+      const conn = await this.conn();
+      if (conn) {
+        await conn.ping();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Cache connection error:", error);
+      return false;
+    }
+  }
+
   async conn() {
     if (this.client) {
       if (!this.client.isOpen) {

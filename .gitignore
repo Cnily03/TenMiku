@@ -32,6 +32,7 @@ config.toml
 # production files
 *.prod.ts
 *.prod.js
+*.prod.yml
 
 # IntelliJ based IDEs
 .idea

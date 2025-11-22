@@ -10,7 +10,7 @@ url = 'redis://localhost:6379'
 [database]
 enable   = true
 db       = 'tenmiku'
-host     = 'database'
+host     = 'localhost'
 user     = 'tenmiku'
 password = 'P@ssw02dInD3v3l0pm3nt'
 port     = 5432

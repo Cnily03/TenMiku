@@ -1,6 +1,13 @@
 name: tenmiku
 
 services:
+  cache:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    volumes:
+      - cache:/data
+    ports:
+      - "6379:6379"
   database:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -11,15 +18,7 @@ services:
     volumes:
       - database:/var/lib/postgresql/data
     ports:
-      - '5432:5432'
-
-  cache:
-    image: valkey/valkey:8-alpine
-    restart: unless-stopped
-    volumes:
-      - cache:/data
-    ports:
-      - '6379:6379'
+      - "5432:5432"
 
 volumes:
   database:

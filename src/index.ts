@@ -24,6 +24,9 @@ export class TenMiku {
 
   constructor(options?: TenMikuOptions) {
     this.cache = options?.cache;
+    this?.cache?.check().then((ok) => {
+      if (ok) console.log("[TenMiku] Cache is ready.");
+    });
     this.utils = new TenMikuUtils({ cache: this.cache });
     // integrated plugins
     this.use(new InteractivePlugin());

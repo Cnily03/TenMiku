@@ -66,6 +66,9 @@ export default class QbotPlugin extends TenMikuPlugin {
     }
     if (options?.database) {
       this.database = options.database;
+      this.database.check().then((ok) => {
+        if (ok) console.log("[QBot] database connected.");
+      });
       this.initDatabase();
     }
   }
@@ -82,7 +85,6 @@ export default class QbotPlugin extends TenMikuPlugin {
       );
     `)
       .catch(console.error);
-    console.log("QBot preferences table is ready.");
     client.release();
   }
 

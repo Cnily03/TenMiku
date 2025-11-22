@@ -28,6 +28,18 @@ export class Database {
     });
   }
 
+  async check(): Promise<boolean> {
+    try {
+      const client = await this.conn();
+      await client.query("SELECT 1;");
+      client.release();
+      return true;
+    } catch (error) {
+      console.error("Database connection error:", error);
+      return false;
+    }
+  }
+
   async conn(): Promise<pg.PoolClient> {
     return await this.pool.connect();
   }
