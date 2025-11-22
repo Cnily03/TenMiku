@@ -29,6 +29,10 @@ config.toml
 .cache
 *.tsbuildinfo
 
+# production files
+*.prod.ts
+*.prod.js
+
 # IntelliJ based IDEs
 .idea
 
