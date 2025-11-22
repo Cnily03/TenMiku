@@ -6,6 +6,15 @@ interface Config {
     enable: boolean;
     url: string;
   };
+  database: {
+    enable: boolean;
+    db: string;
+    host: string;
+    user: string;
+    password: string;
+    port: number;
+    ssl_mode: string;
+  };
 }
 
 const configText = fs.readFileSync("config.toml", "utf-8");

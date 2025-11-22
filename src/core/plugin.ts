@@ -1,4 +1,5 @@
-import type { TenMiku } from "@/index";
+import type TenMiku from "@/index";
+import type { TenmikuProtected } from "@/index";
 
 export class TenMikuPlugin {
   readonly name: string;
@@ -6,5 +7,5 @@ export class TenMikuPlugin {
     this.name = name;
   }
 
-  setup(_tenmiku: TenMiku) {}
+  setup(_tenmiku: TenMiku, _protected: TenmikuProtected) {}
 }

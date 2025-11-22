@@ -30,7 +30,8 @@
     // Aliases
     // "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@plugins/*": ["./src/plugins/*"]
     }
   }
 }

@@ -1,27 +1,40 @@
+import type { Cache } from "@/core/net/cache";
 import type { TenMikuPlugin } from "@/core/plugin";
-import type { Cache } from "./core/net/cache";
-import { TenMikuUtils } from "./utils";
+import InteractivePlugin from "@/plugins/interactive";
+import QbotPlugin from "@/plugins/qbot";
+import { TenMikuUtils } from "@/utils";
+import type { Database } from "./core/net/database";
 
-interface TenMikuOptions {
+export interface TenmikuProtected {
   cache?: Cache;
 }
 
-export default class TenMiku {
+interface TenMikuOptions {
+  cache?: Cache;
+  /**
+   * For `QbotPlugin`
+   */
+  database?: Database;
+}
+
+export class TenMiku {
   private plugins: TenMikuPlugin[] = [];
-  private cache?: Cache;
+  protected cache?: Cache;
   readonly utils: TenMikuUtils;
 
   constructor(options?: TenMikuOptions) {
     this.cache = options?.cache;
     this.utils = new TenMikuUtils({ cache: this.cache });
+    // integrated plugins
+    this.use(new InteractivePlugin());
+    this.use(new QbotPlugin({ cache: this.cache, database: options?.database }));
   }
-
-  // reserve for integrated plugin: interactive
-  async interactive(): Promise<void> {}
 
   use(plugin: TenMikuPlugin) {
     this.plugins.push(plugin);
-    plugin.setup(this);
+    plugin.setup(this, { cache: this.cache });
     return this;
   }
 }
+
+export default TenMiku;

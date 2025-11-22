@@ -10,7 +10,7 @@ export class Cache {
     }
   }
 
-  async getConn() {
+  async conn() {
     if (this.client) {
       if (!this.client.isOpen) {
         await this.client.connect();
@@ -59,7 +59,7 @@ export class CacheKey {
    * Delete the cache entry for the constructed key.
    */
   async del(): Promise<void> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       await conn.del(key);
@@ -71,7 +71,7 @@ export class CacheKey {
    * @returns A boolean indicating whether the cache entry exists.
    */
   async exists(): Promise<boolean> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       const result = await conn.exists(key);
@@ -85,7 +85,7 @@ export class CacheKey {
    * @param sec The expiration time in seconds.
    */
   async expire(sec: number): Promise<void> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       await conn.expire(key, sec);
@@ -93,11 +93,25 @@ export class CacheKey {
   }
 
   /**
+   * Get the time-to-live (TTL) for the cache entry.
+   * @returns The TTL in seconds
+   */
+  async ttl(): Promise<number | null> {
+    const conn = await this.client.conn();
+    if (conn) {
+      const key = this.build_key();
+      const ttl = await conn.ttl(key);
+      return ttl;
+    }
+    return null;
+  }
+
+  /**
    * Retrieve the value stored in the cache for the constructed key.
    * @returns The value stored in the cache for the constructed key, or null if not found.
    */
   async get(): Promise<string | null> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       return await conn.get(key);
@@ -111,7 +125,7 @@ export class CacheKey {
    * @param expireSec Optional expiration time in seconds.
    */
   async set(value: string, expireSec?: number): Promise<void> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       if (expireSec) {
@@ -128,7 +142,7 @@ export class CacheKey {
    * @returns The value associated with the specified field, or null if not found.
    */
   async hget(field: string): Promise<string | null> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       return await conn.hGet(key, field);
@@ -142,7 +156,7 @@ export class CacheKey {
    * @param value The value to set for the specified field.
    */
   async hset(field: string, value: string): Promise<void> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       await conn.hSet(key, field, value);
@@ -154,7 +168,7 @@ export class CacheKey {
    * @param field The field within the hash to delete.
    */
   async hdel(field: string): Promise<void> {
-    const conn = await this.client.getConn();
+    const conn = await this.client.conn();
     if (conn) {
       const key = this.build_key();
       await conn.hDel(key, field);

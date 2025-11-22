@@ -11,7 +11,7 @@
   },
   "files": {
     "includes": [
-      "src/**/*.{ts,tsx,js,mts,mjs,cjs,jsx,json,yml,yaml}",
+      "**/*.{ts,tsx,js,mts,mjs,cjs,jsx,json,yml,yaml}",
       "!**/.DS_Store",
       "!**/node_modules",
       "!**/.env",

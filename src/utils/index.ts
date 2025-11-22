@@ -1,4 +1,4 @@
-import api from "@/core/_api";
+import http from "@/core/http";
 import { Cache } from "@/core/net/cache";
 import { fuzzyMatchMixed } from "./search";
 import "@/extend";
@@ -32,10 +32,120 @@ interface MusicListItem {
   isFullLength: boolean;
 }
 
+// {
+//   "id": 1121,
+//   "musicId": 564,
+//   "musicVocalType": "original_song",
+//   "seq": 101,
+//   "releaseConditionId": 5,
+//   "caption": "バーチャル・シンガーver.",
+//   "characters": [
+//     {
+//       "id": 1989,
+//       "musicId": 564,
+//       "musicVocalId": 1121,
+//       "characterType": "game_character",
+//       "characterId": 21,
+//       "seq": 5640
+//     },
+//     {
+//       "id": 2904,
+//       "musicId": 564,
+//       "musicVocalId": 1121,
+//       "characterType": "game_character",
+//       "characterId": 22,
+//       "seq": 5641
+//     },
+//     {
+//       "id": 2905,
+//       "musicId": 564,
+//       "musicVocalId": 1121,
+//       "characterType": "game_character",
+//       "characterId": 24,
+//       "seq": 5642
+//     },
+//     {
+//       "id": 2906,
+//       "musicId": 564,
+//       "musicVocalId": 1121,
+//       "characterType": "game_character",
+//       "characterId": 25,
+//       "seq": 5643
+//     }
+//   ],
+//   "assetbundleName": "vs_0564_01",
+//   "archivePublishedAt": 1738055400000
+// },
+
+interface MusicVocalItem {
+  id: number;
+  musicId: number;
+  musicVocalType: "original_song" | "sekai" | "another_vocal";
+  seq: number;
+  releaseConditionId: number;
+  caption: string;
+  characters: {
+    id: number;
+    musicId: number;
+    musicVocalId: number;
+    characterType: "game_character" | "outside_character";
+    characterId: number;
+    seq: number;
+  }[];
+  assetbundleName: string;
+  archivePublishedAt: number;
+}
+
+// {
+//   "id": 1,
+//   "seq": 1,
+//   "resourceId": 1,
+//   "firstName": "星乃",
+//   "givenName": "一歌",
+//   "firstNameRuby": "ほしの",
+//   "givenNameRuby": "いちか",
+//   "firstNameEnglish": "HOSHINO",
+//   "givenNameEnglish": "ICHIKA",
+//   "gender": "female",
+//   "height": 161.0,
+//   "live2dHeightAdjustment": 85.0,
+//   "figure": "ladies",
+//   "breastSize": "m",
+//   "modelName": "01ichika",
+//   "unit": "light_sound",
+//   "supportUnitType": "none"
+// },
+
+export interface GameCharacterItem {
+  id: number;
+  seq: number;
+  resourceId: number;
+  firstName: string;
+  givenName: string;
+  firstNameRuby: string;
+  givenNameRuby: string;
+  firstNameEnglish: string;
+  givenNameEnglish: string;
+  gender: "female" | "male";
+  height: number;
+  live2dHeightAdjustment: number;
+  figure: string;
+  breastSize: "s" | "m" | "l" | "none";
+  modelName: string;
+  unit: "idol" | "street" | "piapro" | "light_sound";
+  supportUnitType: "none" | "unit";
+}
+
+export interface OutsideCharacterItem {
+  id: number;
+  seq: number;
+  name: string;
+}
+
 export const MUSIC_DIFFICULTIES = ["easy", "normal", "hard", "expert", "master", "append"] as const;
 export type MusicDifficulty = (typeof MUSIC_DIFFICULTIES)[number];
 
-interface MusicDifficultyItem {
+export interface MusicDifficultyItem {
   id: number;
   musicId: number;
   musicDifficulty: MusicDifficulty;
@@ -46,6 +156,7 @@ interface MusicDifficultyItem {
 
 export interface TenMikuUtilsOptions {
   cache?: Cache;
+  defaultRegion?: ServerRegion;
 }
 
 interface FuzzySearchResult {
@@ -59,21 +170,66 @@ interface FuzzySearchResult {
   };
 }
 
+export type ServerRegion = "jp" | "cn";
+
+const URL_TEMPLATE = {
+  MUSIC_LIST: {
+    jp: "https://sekai-world.github.io/sekai-master-db-diff/musics.json",
+    cn: "https://sekai-world.github.io/sekai-master-db-cn-diff/musics.json",
+  },
+  DIFFICULTY_LIST: {
+    jp: "https://sekai-world.github.io/sekai-master-db-diff/musicDifficulties.json",
+    cn: "https://sekai-world.github.io/sekai-master-db-cn-diff/musicDifficulties.json",
+  },
+  MUSIC_VOCALS: {
+    jp: "https://sekai-world.github.io/sekai-master-db-diff/musicVocals.json",
+    cn: "https://sekai-world.github.io/sekai-master-db-cn-diff/musicVocals.json",
+  },
+  GAME_CHARACTERS: {
+    jp: "https://sekai-world.github.io/sekai-master-db-diff/gameCharacters.json",
+    cn: "https://sekai-world.github.io/sekai-master-db-cn-diff/gameCharacters.json",
+  },
+  OUTSIDE_CHARACTERS: {
+    jp: "https://sekai-world.github.io/sekai-master-db-diff/outsideCharacters.json",
+    cn: "https://sekai-world.github.io/sekai-master-db-cn-diff/outsideCharacters.json",
+  },
+  CHART_IMAGE: {
+    jp: "https://storage.sekai.best/sekai-music-charts/jp/{musicIdPad}/{difficulty}.png",
+    cn: "https://storage.sekai.best/sekai-music-charts/jp/{musicIdPad}/{difficulty}.png",
+  },
+  AUDIO_FILE: {
+    jp: "https://storage.sekai.best/sekai-jp-assets/music/{width}/{assetbundleName}/{filename}.{ext}",
+    cn: "https://storage.sekai.best/sekai-jp-assets/music/{width}/{assetbundleName}/{filename}.{ext}",
+  },
+};
+
 export class TenMikuUtils {
   protected cache: Cache;
+  region: ServerRegion;
   constructor(options?: TenMikuUtilsOptions) {
     const opts: Required<TenMikuUtilsOptions> = {
       cache: options?.cache ?? new Cache(),
+      defaultRegion: options?.defaultRegion ?? "jp",
     };
     this.cache = opts.cache;
+    this.region = opts.defaultRegion;
+  }
+
+  at(region: ServerRegion) {
+    const u = new TenMikuUtils({ cache: this.cache, defaultRegion: region });
+    return u;
+  }
+
+  t(tname: keyof typeof URL_TEMPLATE, map: Record<string, string | number> = {}) {
+    return URL_TEMPLATE[tname][this.region].replace(/\{(\w+)\}/g, (_, key) => String(map[key]));
   }
 
   async getMusicLists() {
-    const cacheKey = this.cache.at("musicLists");
+    const cacheKey = this.cache.at("musicLists").at(this.region);
     let lists = (await cacheKey.get())?.parseJSON<MusicListItem[]>();
     if (lists) return lists;
-    lists = await api.get("https://sekai-world.github.io/sekai-master-db-diff/musics.json").json<MusicListItem[]>();
-    await cacheKey.set(JSON.stringify(lists));
+    lists = await http.get(this.t("MUSIC_LIST")).json<MusicListItem[]>();
+    await cacheKey.set(JSON.stringify(lists), 21600);
     return lists;
   }
 
@@ -100,14 +256,44 @@ export class TenMikuUtils {
   }
 
   async getAllDifficulties() {
-    const cacheKey = this.cache.at("musicDifficulties");
+    const cacheKey = this.cache.at("musicDifficulties").at(this.region);
     let difficulties = (await cacheKey.get())?.parseJSON<MusicDifficultyItem[]>();
     if (difficulties) return difficulties;
-    difficulties = await api
-      .get("https://sekai-world.github.io/sekai-master-db-diff/musicDifficulties.json")
-      .json<MusicDifficultyItem[]>();
-    await cacheKey.set(JSON.stringify(difficulties));
+    difficulties = await http.get(this.t("DIFFICULTY_LIST")).json<MusicDifficultyItem[]>();
+    await cacheKey.set(JSON.stringify(difficulties), 21600);
     return difficulties;
+  }
+
+  async getAllMusicVocals() {
+    const cacheKey = this.cache.at("musicVocals").at(this.region);
+    let vocals = (await cacheKey.get())?.parseJSON<MusicVocalItem[]>();
+    if (vocals) return vocals;
+    vocals = await http.get(this.t("MUSIC_VOCALS")).json<MusicVocalItem[]>();
+    await cacheKey.set(JSON.stringify(vocals), 21600);
+    return vocals;
+  }
+
+  async getGameCharacters() {
+    const cacheKey = this.cache.at("gameCharacters").at(this.region);
+    let characters = (await cacheKey.get())?.parseJSON<GameCharacterItem[]>();
+    if (characters) return characters;
+    characters = await http.get(this.t("GAME_CHARACTERS")).json<GameCharacterItem[]>();
+    await cacheKey.set(JSON.stringify(characters), 21600);
+    return characters;
+  }
+
+  async getOutsideCharacters() {
+    const cacheKey = this.cache.at("outsideCharacters").at(this.region);
+    let characters = (await cacheKey.get())?.parseJSON<OutsideCharacterItem[]>();
+    if (characters) return characters;
+    characters = await http.get(this.t("OUTSIDE_CHARACTERS")).json<OutsideCharacterItem[]>();
+    await cacheKey.set(JSON.stringify(characters), 21600);
+    return characters;
+  }
+
+  async search(keyword: string, limit = 10, offset = 0) {
+    const lists = await this.getMusicLists();
+    return this.searchFromLists(keyword, lists, limit, offset);
   }
 
   async getDifficultiesByMusicId(musicId: number) {
@@ -116,13 +302,47 @@ export class TenMikuUtils {
   }
 
   async getMusicChartById(musicId: number, difficulty: MusicDifficulty) {
-    const musicIdStr = musicId.toString().padStart(4, "0");
+    const musicIdPad = musicId.toString().padStart(4, "0");
     const difficulties = await this.getDifficultiesByMusicId(musicId);
     const difficultyNames = difficulties.map((diff) => diff.musicDifficulty);
     if (!difficultyNames.includes(difficulty)) {
       throw new Error(`Music ID ${musicId} does not have difficulty ${difficulty}`);
     }
-    const url = `https://storage.sekai.best/sekai-music-charts/jp/${musicIdStr}/${difficulty}.png`;
+    const url = this.t("CHART_IMAGE", { musicIdPad, difficulty });
     return url;
+  }
+
+  getVocalCharacterItemsSpecified(
+    vocal: MusicVocalItem,
+    c: {
+      gameCharacters: GameCharacterItem[];
+      outsideCharacters: OutsideCharacterItem[];
+    }
+  ): ((GameCharacterItem | OutsideCharacterItem) & Partial<GameCharacterItem> & Partial<OutsideCharacterItem>)[] {
+    const characterItems = vocal.characters.map((char) => {
+      if (char.characterType === "game_character") {
+        return c.gameCharacters.find((gc) => gc.id === char.characterId)!;
+      } else {
+        return c.outsideCharacters.find((oc) => oc.id === char.characterId)!;
+      }
+    });
+    return characterItems;
+  }
+
+  async getVocalCharacterItems(vocal: MusicVocalItem) {
+    const [gameCharacters, outsideCharacters] = await Promise.all([
+      this.getGameCharacters(),
+      this.getOutsideCharacters(),
+    ]);
+    return this.getVocalCharacterItemsSpecified(vocal, { gameCharacters, outsideCharacters });
+  }
+
+  getMusicMp3Url(assetbundleName: string, isShort = false) {
+    return this.t("AUDIO_FILE", {
+      width: isShort ? "short" : "long",
+      assetbundleName,
+      filename: `${assetbundleName}${isShort ? "_short" : ""}`,
+      ext: "mp3",
+    });
   }
 }

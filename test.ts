@@ -1,8 +1,19 @@
+import dotenv from "dotenv";
+import { Cache } from "@/core/net/cache";
+import { Database } from "@/core/net/database";
 import TenMiku from "@/index";
-import InteractivePlugin from "@/plugins/interactive";
+import config from "@/utils/config";
 
-const tenmiku = new TenMiku();
-tenmiku.use(new InteractivePlugin());
+const bindings = dotenv.config({ path: [".env.local", ".env"] }).parsed;
 
-// Now you can use tenmiku.interactive() to start the interactive shell
-await tenmiku.interactive();
+const cache = config.cache.enable ? new Cache(config.cache.url) : undefined;
+const database = config.database.enable ? new Database(config.database) : undefined;
+
+const tenmiku = new TenMiku({ cache, database });
+
+const app = tenmiku.createHonoApp();
+
+export default {
+  fetch: ((req) => app.fetch(req, bindings)) as typeof app.fetch,
+  port: 1331,
+};

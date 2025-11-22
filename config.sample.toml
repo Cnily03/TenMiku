@@ -5,3 +5,13 @@ enable = true
 # redis-cluster://username:password@foo.com:30001?node=bar.com:30002&node=baz.com:30003
 # redis-sentinel://username:password@foo.com:6379/1?sentinelServiceName=fakename&node=foo.com:30001&node=bar.com:30002
 url = 'redis://localhost:6379'
+
+# psql
+[database]
+enable   = true
+db       = 'tenmiku'
+host     = 'database'
+user     = 'tenmiku'
+password = 'P@ssw02dInD3v3l0pm3nt'
+port     = 5432
+ssl_mode = 'disable'               # disable, allow, prefer, require, verify-ca, verify-full
