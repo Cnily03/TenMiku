@@ -125,11 +125,12 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
           return;
         }
         await reply(
-          [
-            `当前服务区偏好: ${SERVER_REGION_TRANSLATION[sr]} (${sr})`,
-            "指令格式: /server 地区",
-            "地区 可选值: cn, jp",
-          ].join("\n")
+          "\n" +
+            [
+              `当前服务区偏好: ${SERVER_REGION_TRANSLATION[sr]} (${sr})`,
+              "指令格式: /server 地区",
+              "地区 可选值: cn, jp",
+            ].join("\n")
         );
         return;
       } else if (command === "谱面") {
@@ -267,7 +268,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
                                 else return [c.firstName, c.givenName].filter(Boolean).join(" ");
                               })
                               .join("、");
-                            return `【${ver}】 ${name}`;
+                            return `${ver} ★ ${name}`;
                           })
                           .join("\n"),
                       },
