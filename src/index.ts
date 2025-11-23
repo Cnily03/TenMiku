@@ -2,7 +2,7 @@ import type { Cache } from "@/core/net/cache";
 import type { TenMikuPlugin } from "@/core/plugin";
 import InteractivePlugin from "@/plugins/interactive";
 import QbotPlugin from "@/plugins/qbot";
-import { TenMikuUtils } from "@/utils";
+import { type ServerRegion, TenMikuUtils } from "@/utils";
 import type { Database } from "./core/net/database";
 
 export interface TenmikuProtected {
@@ -11,6 +11,10 @@ export interface TenmikuProtected {
 
 interface TenMikuOptions {
   cache?: Cache;
+  /**
+   * @default "jp"
+   */
+  defaultRegion?: ServerRegion;
   /**
    * For `QbotPlugin`
    */
@@ -27,10 +31,18 @@ export class TenMiku {
     this?.cache?.check().then((ok) => {
       if (ok) console.log("[TenMiku] Cache is ready.");
     });
-    this.utils = new TenMikuUtils({ cache: this.cache });
+    this.utils = new TenMikuUtils({
+      cache: this.cache,
+      defaultRegion: options?.defaultRegion ?? "jp",
+    });
     // integrated plugins
     this.use(new InteractivePlugin());
-    this.use(new QbotPlugin({ cache: this.cache, database: options?.database }));
+    this.use(
+      new QbotPlugin({
+        cache: this.cache,
+        database: options?.database,
+      })
+    );
   }
 
   use(plugin: TenMikuPlugin) {

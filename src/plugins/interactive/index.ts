@@ -2,6 +2,7 @@ import * as readline from "node:readline";
 import colors from "colors";
 import { TenMikuPlugin } from "@/core/plugin";
 import type TenMiku from "@/index";
+import { isSupportRegion, type ServerRegion, SUPPORT_REGIONS } from "@/utils";
 import InteractiveCallerHelper from "./callers";
 
 declare module "@/index" {
@@ -16,15 +17,24 @@ interface InteractiveCommand {
   handler: (args: string[]) => Promise<void> | void;
 }
 
+interface InteractiveOptions {
+  /**
+   * @default "jp"
+   */
+  defaultRegion?: ServerRegion;
+}
+
 export default class InteractivePlugin extends TenMikuPlugin {
   private TENMIKU: TenMiku | null = null;
   private commands: Map<string, InteractiveCommand> = new Map();
   private rl: readline.Interface | null = null;
   private isRunning = false;
   private callerHelper = new InteractiveCallerHelper();
+  region: ServerRegion;
 
-  constructor() {
+  constructor(options?: InteractiveOptions) {
     super("interactive");
+    this.region = options?.defaultRegion ?? "jp";
     this.registerDefaultCommands();
   }
 
@@ -54,6 +64,45 @@ export default class InteractivePlugin extends TenMikuPlugin {
       console.log(colors.bold("Available commands:"));
       for (const cmd of this.commands.values()) {
         console.log(`  ${colors.cyan(cmd.name)} - ${cmd.description}`);
+      }
+    });
+
+    this.register("get", "Get current properties", async (args: string[]) => {
+      if (args.length === 0) {
+        console.log(colors.bold("Current properties:"));
+        console.log(`  ${colors.yellow("region")}: ${colors.green(this.region)}`);
+      } else {
+        const property = args[0]!;
+        switch (property) {
+          case "region":
+            console.log(`  ${colors.yellow("region")}: ${colors.green(this.region)}`);
+            break;
+          default:
+            console.log(colors.red(`Unknown property: ${property}`));
+        }
+      }
+    });
+
+    this.register("set", "Set a property", async (args: string[]) => {
+      if (args.length < 2) {
+        console.log(colors.red("Usage: set <property> <value>"));
+        return;
+      }
+      const property = args[0]!;
+      const value = args[1]!;
+
+      switch (property) {
+        case "region":
+          if (!isSupportRegion(value)) {
+            console.log(colors.red(`Unsupported region: ${value}`));
+            console.log(`Supported regions: ${SUPPORT_REGIONS.join(", ")}`);
+            return;
+          }
+          this.region = value;
+          console.log(`Set ${colors.yellow("region")} to ${colors.green(this.region)}`);
+          break;
+        default:
+          console.log(colors.red(`Unknown property: ${property}`));
       }
     });
 

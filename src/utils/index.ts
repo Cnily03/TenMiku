@@ -3,7 +3,7 @@ import { Cache } from "@/core/net/cache";
 import { fuzzyMatchMixed } from "./search";
 import "@/extend";
 
-interface MusicListItem {
+export interface MusicListItem {
   id: number;
   seq: number;
   releaseConditionId: number;
@@ -32,52 +32,7 @@ interface MusicListItem {
   isFullLength: boolean;
 }
 
-// {
-//   "id": 1121,
-//   "musicId": 564,
-//   "musicVocalType": "original_song",
-//   "seq": 101,
-//   "releaseConditionId": 5,
-//   "caption": "バーチャル・シンガーver.",
-//   "characters": [
-//     {
-//       "id": 1989,
-//       "musicId": 564,
-//       "musicVocalId": 1121,
-//       "characterType": "game_character",
-//       "characterId": 21,
-//       "seq": 5640
-//     },
-//     {
-//       "id": 2904,
-//       "musicId": 564,
-//       "musicVocalId": 1121,
-//       "characterType": "game_character",
-//       "characterId": 22,
-//       "seq": 5641
-//     },
-//     {
-//       "id": 2905,
-//       "musicId": 564,
-//       "musicVocalId": 1121,
-//       "characterType": "game_character",
-//       "characterId": 24,
-//       "seq": 5642
-//     },
-//     {
-//       "id": 2906,
-//       "musicId": 564,
-//       "musicVocalId": 1121,
-//       "characterType": "game_character",
-//       "characterId": 25,
-//       "seq": 5643
-//     }
-//   ],
-//   "assetbundleName": "vs_0564_01",
-//   "archivePublishedAt": 1738055400000
-// },
-
-interface MusicVocalItem {
+export interface MusicVocalItem {
   id: number;
   musicId: number;
   musicVocalType: "original_song" | "sekai" | "another_vocal";
@@ -95,26 +50,6 @@ interface MusicVocalItem {
   assetbundleName: string;
   archivePublishedAt: number;
 }
-
-// {
-//   "id": 1,
-//   "seq": 1,
-//   "resourceId": 1,
-//   "firstName": "星乃",
-//   "givenName": "一歌",
-//   "firstNameRuby": "ほしの",
-//   "givenNameRuby": "いちか",
-//   "firstNameEnglish": "HOSHINO",
-//   "givenNameEnglish": "ICHIKA",
-//   "gender": "female",
-//   "height": 161.0,
-//   "live2dHeightAdjustment": 85.0,
-//   "figure": "ladies",
-//   "breastSize": "m",
-//   "modelName": "01ichika",
-//   "unit": "light_sound",
-//   "supportUnitType": "none"
-// },
 
 export interface GameCharacterItem {
   id: number;
@@ -156,10 +91,13 @@ export interface MusicDifficultyItem {
 
 export interface TenMikuUtilsOptions {
   cache?: Cache;
+  /**
+   * @default "jp"
+   */
   defaultRegion?: ServerRegion;
 }
 
-interface FuzzySearchResult {
+export interface FuzzySearchResult {
   item: MusicListItem;
   score: number;
   input: string;
@@ -237,7 +175,7 @@ export class TenMikuUtils {
     return lists;
   }
 
-  async searchFromLists(keyword: string, lists: MusicListItem[], limit = 10, offset = 0) {
+  async searchFromLists(keyword: string, lists: MusicListItem[], limit = 10, offset = 0, noZero = true) {
     const scores: FuzzySearchResult[] = [];
     for (const item of lists) {
       const keywords = [item.title, ...(item.infos?.map((info) => info.title) ?? []), item.pronunciation];
@@ -246,6 +184,7 @@ export class TenMikuUtils {
         const m = fuzzyMatchMixed(keyword, kw);
         if (maxM === null || m.score > (maxM?.score ?? 0)) maxM = m;
       }
+      if (noZero && (maxM?.score ?? 0) === 0) continue;
       scores.push({
         item,
         score: maxM?.score ?? 0,
@@ -257,6 +196,11 @@ export class TenMikuUtils {
 
     scores.sort((a, b) => b.score - a.score);
     return scores.slice(offset, offset + limit);
+  }
+
+  async search(keyword: string, limit = 10, offset = 0, noZero = true) {
+    const lists = await this.getMusicLists();
+    return this.searchFromLists(keyword, lists, limit, offset, noZero);
   }
 
   async getAllDifficulties() {
@@ -293,11 +237,6 @@ export class TenMikuUtils {
     characters = await http.get(this.t("OUTSIDE_CHARACTERS")).json<OutsideCharacterItem[]>();
     await cacheKey.set(JSON.stringify(characters), 21600);
     return characters;
-  }
-
-  async search(keyword: string, limit = 10, offset = 0) {
-    const lists = await this.getMusicLists();
-    return this.searchFromLists(keyword, lists, limit, offset);
   }
 
   async getDifficultiesByMusicId(musicId: number) {
