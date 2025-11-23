@@ -19,9 +19,6 @@ export interface Markdown {
     value: string;
   }>;
 }
-interface Keyboard_Template {
-  id: string;
-}
 
 export interface KeyboardButton {
   /**
@@ -57,8 +54,8 @@ export interface KeyboardButton {
      * 按钮类型
      * @description
      * - `0` 跳转按钮：http 或 小程序 客户端识别 scheme
-     * - `1` 回调按钮：回调后台接口, data 传给后台
-     * - `2` 指令按钮：自动在输入框插入 `@Bot`
+     * - `1` 回调按钮：回调后台接口, `data` 传给后台
+     * - `2` 指令按钮：自动在输入框插入 `@Bot` 和 `data` 内容
      */
     type: 0 | 1 | 2;
     /**
@@ -124,20 +121,27 @@ export interface KeyboardButton {
   };
 }
 
-interface Keyboard_Custom {
-  content: {
-    rows: {
-      buttons: KeyboardButton[];
-    }[];
-  };
-}
-
 /**
  * Keyboard 对象
  * @description 在 Markdown 消息的基础上，支持消息最底部挂载按钮。
  * @see https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/trans/msg-btn.html#数据结构与协议
  */
-export type Keyboard = Keyboard_Template | Keyboard_Custom;
+interface Keyboard {
+  /**
+   * 模板 ID
+   * @note 与 `content` 二选一使用
+   */
+  id?: string;
+  /**
+   * 按钮内容
+   * @note 与 `id` 二选一使用
+   */
+  content?: {
+    rows: {
+      buttons: KeyboardButton[];
+    }[];
+  };
+}
 
 // 属性	类型	说明
 // file_uuid	string	文件 ID
