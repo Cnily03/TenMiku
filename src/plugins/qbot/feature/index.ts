@@ -153,14 +153,48 @@ function _prepareRichMedia<T extends EventPayload<OpCode.Dispatch>>(
   }
 }
 
-// 筛选线: 标准差 - 削减值
-// 削减值: reduceRate * 标准差, 最大值 maxReduce
-function filterSearchResults<T extends { score: number }>(results: T[], reduceRate = 0.3, maxReduce = 0.15) {
+function filterSearchResults<T extends { score: number }>(
+  results: T[],
+  absReduce = 0.25,
+  reduceRate = 0.4,
+  maxRateReduce = 0.25
+) {
+  if (results.length === 0) return results;
   const scores = results.map((r) => r.score);
+  const max = Math.max(...scores);
+  const min = Math.min(...scores);
+  if (max <= absReduce) return [];
+  // 找到一个点，两边到这个点的距离的标准差差最小
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-  const variance = scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length;
-  const stddev = Math.sqrt(variance);
-  const threshold = mean - Math.min(stddev * reduceRate, maxReduce);
+  // 离中位数最近的点，从小到大排序
+  const sortedScores = [...scores].sort((a, b) => Math.abs(a - mean) - Math.abs(b - mean));
+  // 对每个点，求两边到这个点的距离的标准差的差
+  let found = {
+    score: 0,
+    d: Infinity,
+  };
+  for (const score of sortedScores) {
+    let up = 0;
+    let down = 0;
+    for (const s of scores) {
+      if (s > score) up += (s - score) ** 2;
+      else down += (s - score) ** 2;
+    }
+    const sigma = Math.abs(up - down);
+    if (sigma < found.d) {
+      found = {
+        score,
+        d: sigma,
+      };
+    } else {
+      break;
+    }
+  }
+  const opt = found.score; // 找到了筛选基线
+  // 可变降低值 = (基线 - 最低分数) * 降低比例
+  const rateReduce = (opt - min) * reduceRate;
+  // 筛选基线 - 绝对降低值 - 可变降低值
+  const threshold = opt - absReduce - Math.min(rateReduce, maxRateReduce);
   if (threshold < 0) return results;
   return results.filter((r) => r.score >= threshold);
 }
