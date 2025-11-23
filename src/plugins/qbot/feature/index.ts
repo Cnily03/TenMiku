@@ -267,6 +267,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const content = [
       `歌曲: ${info.title}`,
       `难度: Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`,
+      `物量: ${difficultyItem.totalNoteCount} nts`,
       `作词: ${info.lyricist}`,
       `作曲: ${info.composer}`,
       `编曲: ${info.arranger}`,
@@ -309,7 +310,9 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const promptText = info.title;
     const descText = `歌曲详情 - ${info.title}`;
     const titleText = unique([music.title, info.title]).join("\n");
-    const difficultyText = difficultyItems.map((d) => `Lv. ${d.playLevel} ${capitalize(d.musicDifficulty)}`).join("\n");
+    const difficultyText = difficultyItems
+      .map((d) => `Lv. ${d.playLevel} / ${capitalize(d.musicDifficulty)} / ${d.totalNoteCount} nts`)
+      .join("\n");
     const vocalsText = vocals
       .map((v) => {
         const i18n = {
