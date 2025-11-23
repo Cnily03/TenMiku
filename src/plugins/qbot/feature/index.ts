@@ -153,6 +153,18 @@ function _prepareRichMedia<T extends EventPayload<OpCode.Dispatch>>(
   }
 }
 
+// 筛选线: 标准差 - 削减值
+// 削减值: reduceRate * 标准差, 最大值 maxReduce
+function filterSearchResults<T extends { score: number }>(results: T[], reduceRate = 0.3, maxReduce = 0.15) {
+  const scores = results.map((r) => r.score);
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const variance = scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length;
+  const stddev = Math.sqrt(variance);
+  const threshold = mean - Math.min(stddev * reduceRate, maxReduce);
+  if (threshold < 0) return results;
+  return results.filter((r) => r.score >= threshold);
+}
+
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
   const calcHashKey = () =>
     sha256(new TextEncoder().encode(qbot.api.getApiEnv().appSecret))
@@ -217,7 +229,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(event, "content", help()).void();
     }
 
-    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
       return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
     }
@@ -278,7 +290,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(event, "content", "指令格式: /查曲 歌曲名").void();
     }
 
-    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
       return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
     }
@@ -354,7 +366,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(event, "content", "指令格式: /听曲 歌曲名").void();
     }
 
-    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
       return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
     }
