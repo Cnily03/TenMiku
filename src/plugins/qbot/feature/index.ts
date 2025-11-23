@@ -3,11 +3,14 @@ import { calcSign } from "@plugins/qbot/mw/verify";
 import ky from "ky";
 import { z } from "zod";
 import type TenMiku from "@/index";
-import type { MusicDifficultyItem, ServerRegion } from "@/utils";
+import { isSupportRegion, type MusicDifficultyItem, type ServerRegion, SUPPORT_REGIONS } from "@/utils";
 import type QbotPlugin from "..";
-import type { SendMessageRequest } from "../api/types";
+import type { UserPreferences } from "..";
+import type { QBotApi } from "../api";
+import type { Ark, SendMessageRequest } from "../api/types";
 import { type QBotEventEmitter, whenType } from "../event/emitter";
-import { EVENT_TYPE } from "../event/types";
+import { EVENT_TYPE, type EventPayload, type OpCode } from "../event/types";
+import CommandHelper from "./cmd";
 
 const VerifyRequestSchema = z.object({
   plain_token: z.string(),
@@ -24,50 +27,35 @@ function capitalize(s: string) {
 }
 
 // from level, color to difficulty name
-function parseDifficulty(s: string | number, items: MusicDifficultyItem[]): MusicDifficultyItem | undefined {
-  s = String(s).trim().toLowerCase();
-  if (/\d+/.test(s)) {
-    const item = items.find((i) => i.playLevel === Number(s));
-    if (item) return item;
+function parseDifficulty(s: string, items: MusicDifficultyItem[] = []) {
+  s = s.trim().toLowerCase();
+  const map: Record<string, (string | RegExp)[]> = {
+    easy: ["ez", /^ea/, "绿", "简单", "容易", "简易", "green", "简", "易"],
+    normal: ["n", /^no/, "nm", "蓝", "普通", "普", "blue"],
+    hard: ["h", /^ha/, "hd", "黄", "困难", "难", "yellow"],
+    expert: ["e", /^ex/, "exp", "红", "专家", "red"],
+    master: ["m", /^ma/, "mst", "紫", "大师", "master", "秘", "师"],
+    append: ["a", /^ap/, "apd", "彩", "多指", "colorful", "color", "附"],
+  };
+  if (items.length > 0) {
+    for (const item of items) {
+      const d = item.musicDifficulty.toLowerCase();
+      const lv = String(item.playLevel);
+      if (!Object.hasOwn(map, d)) {
+        Object.defineProperty(map, d, { value: [] });
+      }
+      map[d]?.push(lv);
+      map[d]?.push(d);
+    }
   }
-  if (/^(绿|蓝|黄|红|紫|彩)/.test(s)) s = s[0]!;
-  s =
-    {
-      e: "easy",
-      n: "normal",
-      h: "hard",
-      ex: "expert",
-      m: "master",
-      ap: "append",
-      简: "easy",
-      普: "normal",
-      难: "hard",
-      专: "expert",
-      秘: "master",
-      师: "master",
-      附: "append",
-      简单: "easy",
-      普通: "normal",
-      困难: "hard",
-      专家: "expert",
-      大师: "master",
-      多指: "append",
-      green: "easy",
-      blue: "normal",
-      yellow: "hard",
-      red: "expert",
-      purple: "master",
-      color: "append",
-      colorful: "append",
-      绿: "easy",
-      蓝: "normal",
-      黄: "hard",
-      红: "expert",
-      紫: "master",
-      彩: "append",
-    }[s] || s;
-  const item = items.find((i) => i.musicDifficulty.toLowerCase() === s);
-  if (item) return item;
+  for (const [key, values] of Object.entries(map)) {
+    if (s === key) return key;
+    for (const v of values) {
+      if (typeof v === "string" && s === v) return key;
+      if (v instanceof RegExp && v.test(s)) return key;
+    }
+  }
+  return s;
 }
 
 const SERVER_REGION_TRANSLATION: Record<ServerRegion, string> = {
@@ -75,13 +63,333 @@ const SERVER_REGION_TRANSLATION: Record<ServerRegion, string> = {
   jp: "日服",
 };
 
+function openuid<T extends EventPayload<OpCode.Dispatch>>(event: T) {
+  if (event.t === EVENT_TYPE.C2C.MESSAGE_CREATE) {
+    return event.d.author.user_openid;
+  } else if (event.t === EVENT_TYPE.GROUP.AT_MESSAGE_CREATE) {
+    return event.d.author.member_openid;
+  }
+  return "";
+}
+
+function opengid<T extends EventPayload<OpCode.Dispatch>>(event: T) {
+  if (event.t === EVENT_TYPE.GROUP.AT_MESSAGE_CREATE) {
+    return event.d.group_openid;
+  }
+  return "";
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: any is used for generic inputs
+type WithVoid<T extends (...args: any[]) => any> = T extends (...args: infer P) => infer R
+  ? (...args: P) => R & { void(): R extends Promise<infer _> ? Promise<void> : void }
+  : never;
+
+// biome-ignore lint/suspicious/noExplicitAny: any is used for generic inputs
+function withVoid<T extends (...args: any[]) => any>(fn: T): WithVoid<T> {
+  return ((...args: unknown[]) => {
+    const res = fn(...args);
+    // biome-ignore lint/suspicious/noExplicitAny: bypass complex type checking
+    (res as any).void = () => {
+      if (res instanceof Promise) {
+        return res.then(() => {});
+      }
+    };
+    return res;
+  }) as WithVoid<T>;
+}
+
+function _sendPassiveMessage<T extends EventPayload<OpCode.Dispatch>>(
+  this: QBotApi,
+  event: T,
+  type: "content" | "markdown" | "ark" | "embed" | "media",
+  o: string | Partial<SendMessageRequest>,
+  newLineAfterAt = true
+) {
+  const map = {
+    content: 0,
+    markdown: 2,
+    ark: 3,
+    embed: 4,
+    media: 7,
+  } as const;
+  const msg_type = map[type];
+  const request: SendMessageRequest = {
+    event_id: event.id,
+    msg_id: event.d.id,
+    ...(typeof o === "string" ? { content: o } : o),
+    msg_type,
+  };
+  if (event.t === EVENT_TYPE.C2C.MESSAGE_CREATE) {
+    return this.sendC2CMessage(openuid(event), request);
+  } else {
+    if (request.content && newLineAfterAt) request.content = `\n${request.content}`;
+    return this.sendGroupMessage(opengid(event), request);
+  }
+}
+
+function _prepareRichMedia<T extends EventPayload<OpCode.Dispatch>>(
+  this: QBotApi,
+  event: T,
+  type: "image" | "video" | "audio" | "file",
+  url: string,
+  srv_send_msg = false
+) {
+  const map = {
+    image: 1,
+    video: 2,
+    audio: 3,
+    file: 4,
+  } as const;
+  const file_type = map[type];
+  const request = {
+    file_type,
+    url: url,
+    srv_send_msg,
+  };
+  if (event.t === EVENT_TYPE.C2C.MESSAGE_CREATE) {
+    return this.prepareC2CRichMedia(openuid(event), request);
+  } else {
+    return this.prepareGroupRichMedia(opengid(event), request);
+  }
+}
+
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
-  const endpointKey = () =>
+  const calcHashKey = () =>
     sha256(new TextEncoder().encode(qbot.api.getApiEnv().appSecret))
       .toBase64()
       .replace(/\//g, "_")
       .replace(/\+/g, "-")
       .replace(/=+$/, "");
+
+  const sendPassiveMsg = withVoid(_sendPassiveMessage.bind(qbot.api));
+  const prepareRichMedia = withVoid(_prepareRichMedia.bind(qbot.api));
+
+  interface CmdEnv {
+    hashKey: string;
+    preferences: UserPreferences;
+    event: EventPayload<OpCode.Dispatch, EVENT_TYPE.C2C.MESSAGE_CREATE | EVENT_TYPE.GROUP.AT_MESSAGE_CREATE>;
+  }
+
+  const cmd = new CommandHelper<CmdEnv>("/");
+
+  cmd.handle("server", async (ctx) => {
+    const preferences = ctx.env.preferences;
+    const data = ctx.env.event;
+
+    if (!qbot.databaseAvailable()) return sendPassiveMsg(data, "content", "该功能暂不可用").void();
+
+    const help = () => {
+      return ["指令格式: /server 地区", `地区 可选值: ${SUPPORT_REGIONS.join(", ")}`].join("\n");
+    };
+
+    if (ctx.restArgs.at(0) === undefined) {
+      const region = preferences.serverRegion;
+      return await sendPassiveMsg(
+        data,
+        "content",
+        [`当前服务区偏好: ${SERVER_REGION_TRANSLATION[region]} (${region})`, help()].join("\n")
+      ).void();
+    }
+    const region = ctx.restArgs[0]!.trim().toLowerCase();
+    if (isSupportRegion(region)) {
+      await qbot.storePreferences(openuid(data), { serverRegion: region });
+      return await sendPassiveMsg(
+        data,
+        "content",
+        `已将默认服务区偏好设置为: ${SERVER_REGION_TRANSLATION[region]} (${region})`
+      ).void();
+    }
+    return await sendPassiveMsg(data, "content", help()).void();
+  });
+
+  cmd.handle("谱面", async (ctx) => {
+    const preferences = ctx.env.preferences;
+    const event = ctx.env.event;
+    const region = preferences.serverRegion;
+
+    const [difficulty, musicName] = ctx.restArgs;
+
+    const help = () => {
+      return ["指令格式: /谱面 难度 歌曲名", "难度和歌曲名支持模糊匹配"].join("\n");
+    };
+
+    if (!difficulty || !musicName) {
+      return await sendPassiveMsg(event, "content", help()).void();
+    }
+
+    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    if (searchResult.length === 0) {
+      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+    }
+
+    const music = searchResult[0]!.item;
+    const difficultyItems = await tenmiku.utils.at(region).getDifficultiesByMusicId(music.id);
+    const difficultyName = parseDifficulty(difficulty, difficultyItems);
+    const difficultyItem = difficultyItems.find((d) => d.musicDifficulty.toLowerCase() === difficultyName);
+    if (!difficultyItem) {
+      return await sendPassiveMsg(event, "content", `未找到歌曲 ${music.title} 的难度: ${difficulty}`).void();
+    }
+
+    const imageLink = await tenmiku.utils.at(region).getMusicChartById(music.id, difficultyItem.musicDifficulty);
+    console.log(
+      `Send music chart for ${music.title} - Lv. ${difficultyItem.playLevel} ${difficultyItem.musicDifficulty}`
+    );
+
+    const uploadResp = await ky
+      .post(`http://silkup.cnily.top:21747/v1/file/store/${ctx.env.hashKey}`, {
+        json: {
+          url: imageLink,
+        },
+        timeout: 30 * 1000,
+        throwHttpErrors: false,
+      })
+      .json<{ name: string }>();
+
+    if (!uploadResp.name) {
+      return console.log(
+        `Failed to download music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
+      );
+    }
+
+    const info = music.infos?.at(0) ?? music;
+    const content = [
+      `歌曲: ${info.title}`,
+      `难度: Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`,
+      `作词: ${info.lyricist}`,
+      `作曲: ${info.composer}`,
+      `编曲: ${info.arranger}`,
+    ].join("\n");
+
+    const media = await prepareRichMedia(
+      event,
+      "image",
+      `http://silkup.cnily.top:21747/v1/file/store/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
+    );
+    await sendPassiveMsg(event, "media", { content, media }).void();
+  });
+
+  cmd.handle("查曲", async (ctx) => {
+    const preferences = ctx.env.preferences;
+    const event = ctx.env.event;
+    const region = preferences.serverRegion;
+
+    const musicName = ctx.rest.trim();
+    if (!musicName) {
+      return await sendPassiveMsg(event, "content", "指令格式: /查曲 歌曲名").void();
+    }
+
+    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    if (searchResult.length === 0) {
+      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+    }
+
+    const music = searchResult[0]!.item;
+    const difficultyItems = await tenmiku.utils.at(region).getDifficultiesByMusicId(music.id);
+    const vocals = (await tenmiku.utils.at(region).getAllMusicVocals()).filter((v) => v.musicId === music.id);
+    const [gameCharacters, outsideCharacters] = await Promise.all([
+      tenmiku.utils.at(region).getGameCharacters(),
+      tenmiku.utils.at(region).getOutsideCharacters(),
+    ]);
+
+    const unique = (arr: string[]) => Array.from(new Set(arr));
+    const info = music.infos?.at(0) ?? music;
+
+    const promptText = info.title;
+    const descText = `歌曲详情 - ${info.title}`;
+    const titleText = unique([music.title, info.title]).join("\n");
+    const difficultyText = difficultyItems.map((d) => `Lv. ${d.playLevel} ${capitalize(d.musicDifficulty)}`).join("\n");
+    const vocalsText = vocals
+      .map((v) => {
+        const i18n = {
+          original_song: "虚拟歌手 ver.",
+          sekai: "「世界」ver.",
+          virtual_singer: "虚拟歌手 ver.",
+          another_vocal: "Another Vocal ver.",
+          instrumental: "纯音乐 ver.",
+          april_fool_2022: "愚人节 ver.",
+        };
+        const ver =
+          i18n[v.musicVocalType] ||
+          v.caption.replace(/(.\b)ver.?$/i, (_, p1: string) => `${p1.replace(/\s$/, "")} ver.`);
+        const charNames = tenmiku.utils
+          .at(region)
+          .getVocalCharacterItemsSpecified(v, { gameCharacters, outsideCharacters })
+          .map((c) => {
+            if (c.name) return c.name;
+            else return [c.firstName, c.givenName].filter(Boolean).join(" ");
+          });
+        return `${ver} ★ ${charNames.join("、")}`;
+      })
+      .join("\n");
+    const creditText = [`作词: ${info.lyricist}`, `作曲: ${info.composer}`, `编曲: ${info.arranger}`].join("\n");
+
+    const ark: Ark = {
+      template_id: 23,
+      kv: [
+        { key: "#DESC#", value: descText },
+        { key: "#PROMPT#", value: promptText },
+        {
+          key: "#LIST#",
+          obj: [
+            { obj_kv: [{ key: "desc", value: titleText }] },
+            { obj_kv: [{ key: "desc", value: difficultyText }] },
+            { obj_kv: [{ key: "desc", value: vocalsText }] },
+            { obj_kv: [{ key: "desc", value: creditText }] },
+          ],
+        },
+      ],
+    };
+
+    console.log(`Send music details for ${music.title}`);
+    await sendPassiveMsg(event, "ark", { ark }).void();
+  });
+
+  cmd.handle("听曲", async (ctx) => {
+    const preferences = ctx.env.preferences;
+    const event = ctx.env.event;
+    const region = preferences.serverRegion;
+
+    const musicName = ctx.rest.trim();
+    if (!musicName) {
+      return await sendPassiveMsg(event, "content", "指令格式: /听曲 歌曲名").void();
+    }
+
+    const searchResult = await tenmiku.utils.at(region).search(musicName);
+    if (searchResult.length === 0) {
+      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+    }
+
+    const music = searchResult[0]!.item;
+    const vocals = (await tenmiku.utils.at(region).getAllMusicVocals()).filter((v) => v.musicId === music.id);
+    const sekai = vocals.find((v) => v.musicVocalType === "sekai");
+    const item = sekai || vocals[0]!;
+    const bn = item.assetbundleName;
+    const mp3Url = tenmiku.utils.at(region).getMusicMp3Url(bn, false);
+
+    const uploadResp = await ky
+      .post(`http://silkup.cnily.top:21747/v1/silk/encode/${ctx.env.hashKey}`, {
+        json: {
+          url: mp3Url,
+          offset: music.fillerSec,
+        },
+        timeout: 30 * 1000,
+        throwHttpErrors: false,
+      })
+      .json<{ name: string }>();
+
+    if (!uploadResp.name) {
+      return console.log(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
+    }
+
+    console.log(`Upload and send music silk for ${music.title} - ${item.musicVocalType}`);
+
+    const media = await prepareRichMedia(
+      event,
+      "audio",
+      `http://silkup.cnily.top:21747/v1/silk/encode/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
+    );
+    await sendPassiveMsg(event, "media", { media }).void();
+  });
 
   // emitter.on("*", (data) => {
   //   console.log(data);
@@ -89,249 +397,14 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
   emitter.on(
     "*:dispatch",
-    whenType(EVENT_TYPE.GROUP.AT_MESSAGE_CREATE, async (data) => {
-      const ENDPOINT_KEY = endpointKey();
-
-      const reply = (msg: string, extra: Partial<SendMessageRequest> = {}) => {
-        return qbot.api.sendGroupMessage(data.d.group_openid, {
-          content: msg,
-          msg_type: 0,
-          event_id: data.id,
-          msg_id: data.d.id,
-          ...extra,
-        });
-      };
-
+    whenType([EVENT_TYPE.C2C.MESSAGE_CREATE, EVENT_TYPE.GROUP.AT_MESSAGE_CREATE], async (data) => {
       const content = data.d.content.trim();
-      if (!content.startsWith("/")) return;
-      const match = `${content} `.match(/^\/([^\s]+)\s+(.*)$/);
-      if (!match) return;
-      const command = match[1] ?? "";
-      const rest = match[2] ?? "";
-
-      // commands
-      const preferences = (await qbot.queryPreferences(data.d.group_openid)) ?? { serverRegion: "cn" };
-      const sr = preferences.serverRegion;
-
-      if (command === "server") {
-        if (!qbot.databaseAvailable()) {
-          await reply("该功能暂不可用");
-          return;
-        }
-        const region = rest.trim().toLowerCase();
-        if (["cn", "jp"].includes(region)) {
-          await qbot.storePreferences(data.d.group_openid, { serverRegion: region as ServerRegion });
-          await reply(`已将默认服务区偏好设置为: ${SERVER_REGION_TRANSLATION[region as ServerRegion]} (${region})`);
-          return;
-        }
-        await reply(
-          "\n" +
-            [
-              `当前服务区偏好: ${SERVER_REGION_TRANSLATION[sr]} (${sr})`,
-              "指令格式: /server 地区",
-              "地区 可选值: cn, jp",
-            ].join("\n")
-        );
-        return;
-      } else if (command === "谱面") {
-        const m = rest.match(/^([^\s]+)\s+(.*)$/);
-        if (!m) {
-          await reply("指令格式: /谱面 难度 歌曲名");
-          return;
-        }
-        const difficulty = m[1]?.toLowerCase();
-        const musicName = m[2];
-        if (!difficulty || !musicName) {
-          await reply("指令格式: /谱面 难度 歌曲名");
-          return;
-        }
-        const searchResult = await tenmiku.utils.at(sr).search(musicName);
-        if (searchResult.length === 0) {
-          await reply(`未找到歌曲: ${musicName}`);
-          return;
-        }
-        const music = searchResult[0]!.item;
-        const diffItems = await tenmiku.utils.at(sr).getDifficultiesByMusicId(music.id);
-        const diff = parseDifficulty(difficulty, diffItems);
-        if (!diff) {
-          await reply(`未找到歌曲 ${music.title} 的难度: ${difficulty}`);
-          return;
-        }
-        const imageLink = await tenmiku.utils.at(sr).getMusicChartById(music.id, diff.musicDifficulty);
-        console.log(`Send music chart for ${music.title} - Lv. ${diff.playLevel} ${diff.musicDifficulty}`);
-
-        const uploadResp = await ky
-          .post(`http://silkup.cnily.top:21747/v1/file/store/${ENDPOINT_KEY}`, {
-            json: {
-              url: imageLink,
-            },
-            timeout: 30 * 1000,
-            throwHttpErrors: false,
-          })
-          .json<{ name: string }>();
-
-        if (!uploadResp.name) {
-          return console.log(
-            `Failed to download music chart for ${music.title} - ${diff.musicDifficulty}: ${imageLink}`
-          );
-        }
-
-        const media = await qbot.api.prepareGroupRichMedia(data.d.group_openid, {
-          file_type: 1,
-          url: `http://silkup.cnily.top:21747/v1/file/store/${ENDPOINT_KEY}?name=${encodeURIComponent(uploadResp.name)}`,
-          srv_send_msg: false,
-        });
-
-        const msg = [
-          `歌曲: ${music.title}`,
-          `难度: Lv. ${diff.playLevel} ${capitalize(diff.musicDifficulty)}`,
-          `作词: ${music.lyricist}`,
-          `作曲: ${music.composer}`,
-          `编曲: ${music.arranger}`,
-        ].join("\n");
-
-        await reply(`\n${msg}`, {
-          msg_type: 7,
-          media: media,
-        });
-        return;
-      } else if (command === "查曲") {
-        const musicName = rest.trim();
-        if (musicName.length === 0) {
-          await reply("指令格式: /查曲 歌曲名");
-          return;
-        }
-        const searchResult = await tenmiku.utils.at(sr).search(musicName);
-        if (searchResult.length === 0) {
-          await reply(`未找到歌曲: ${musicName}`);
-          return;
-        }
-        const music = searchResult[0]!.item;
-        const diff = await tenmiku.utils.at(sr).getDifficultiesByMusicId(music.id);
-        const vocals = (await tenmiku.utils.at(sr).getAllMusicVocals()).filter((v) => v.musicId === music.id);
-        const [gameCharacters, outsideCharacters] = await Promise.all([
-          tenmiku.utils.at(sr).getGameCharacters(),
-          tenmiku.utils.at(sr).getOutsideCharacters(),
-        ]);
-        console.log(`Send music details for ${music.title}`);
-        await reply("", {
-          msg_type: 3,
-          ark: {
-            template_id: 23,
-            kv: [
-              {
-                key: "#DESC#",
-                value: `获取「${music.title}」的详细信息`,
-              },
-              {
-                key: "#PROMPT#",
-                value: music.title,
-              },
-              {
-                key: "#LIST#",
-                obj: [
-                  {
-                    obj_kv: [
-                      {
-                        key: "desc",
-                        value: Array.from(new Set([music.title, music.infos?.map((info) => info.title)].flat())).join(
-                          "\n"
-                        ),
-                      },
-                    ],
-                  },
-                  {
-                    obj_kv: [
-                      {
-                        key: "desc",
-                        value: diff.map((d) => `Lv. ${d.playLevel} ${capitalize(d.musicDifficulty)}`).join("\n"),
-                      },
-                    ],
-                  },
-                  {
-                    obj_kv: [
-                      {
-                        key: "desc",
-                        value: vocals
-                          .map((v) => {
-                            const ver =
-                              {
-                                original_song: "虚拟歌手ver.",
-                                sekai: "「世界」ver.",
-                                another_vocal: "Another Vocal ver.",
-                              }[v.musicVocalType] || v.caption;
-                            const name = tenmiku.utils
-                              .at(sr)
-                              .getVocalCharacterItemsSpecified(v, { gameCharacters, outsideCharacters })
-                              .map((c) => {
-                                if (c.name) return c.name;
-                                else return [c.firstName, c.givenName].filter(Boolean).join(" ");
-                              })
-                              .join("、");
-                            return `${ver} ★ ${name}`;
-                          })
-                          .join("\n"),
-                      },
-                    ],
-                  },
-                  {
-                    obj_kv: [
-                      {
-                        key: "desc",
-                        value: [`作词: ${music.lyricist}`, `作曲: ${music.composer}`, `编曲: ${music.arranger}`].join(
-                          "\n"
-                        ),
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        });
-      } else if (command === "听曲") {
-        const musicName = rest.trim();
-        if (musicName.length === 0) {
-          await reply("指令格式: /听曲 歌曲名");
-          return;
-        }
-        const searchResult = await tenmiku.utils.at(sr).search(musicName);
-        if (searchResult.length === 0) {
-          await reply(`未找到歌曲: ${musicName}`);
-          return;
-        }
-        const music = searchResult[0]!.item;
-        const vocals = (await tenmiku.utils.at(sr).getAllMusicVocals()).filter((v) => v.musicId === music.id);
-        const sekai = vocals.find((v) => v.musicVocalType === "sekai");
-        const item = sekai || vocals[0]!;
-        const bn = item.assetbundleName;
-        const mp3Url = tenmiku.utils.at(sr).getMusicMp3Url(bn, false);
-
-        const uploadResp = await ky
-          .post(`http://silkup.cnily.top:21747/v1/silk/encode/${ENDPOINT_KEY}`, {
-            json: {
-              url: mp3Url,
-              offset: music.fillerSec,
-            },
-            timeout: 30 * 1000,
-            throwHttpErrors: false,
-          })
-          .json<{ name: string }>();
-
-        if (!uploadResp.name) {
-          return console.log(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
-        }
-
-        console.log(`Upload and send music silk for ${music.title} - ${item.musicVocalType}`);
-        const media = await qbot.api.prepareGroupRichMedia(data.d.group_openid, {
-          file_type: 3,
-          url: `http://silkup.cnily.top:21747/v1/silk/encode/${ENDPOINT_KEY}?name=${encodeURIComponent(uploadResp.name)}`,
-          srv_send_msg: false,
-        });
-        await reply("", {
-          msg_type: 7,
-          media: media,
-        });
+      const preferences = (await qbot.queryPreferences(openuid(data))) ?? {
+        serverRegion: "cn",
+      };
+      const executed = await cmd.runPrefix(content, { event: data, preferences, hashKey: calcHashKey() });
+      if (executed) {
+        console.log(`Command executed: ${content}`);
       }
     })
   );

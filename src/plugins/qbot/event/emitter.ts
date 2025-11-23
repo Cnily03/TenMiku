@@ -82,7 +82,7 @@ export class QBotEventEmitter extends EventEmitter<QbotEventMap> {
     this.handlers[event]!.push(handler as unknown as any);
   }
 
-  trigger<E extends keyof QbotHandleMap>(
+  run<E extends keyof QbotHandleMap>(
     event: E,
     ...args: Parameters<QbotHandleMap[E]>
   ): InjectVoid<ReturnType<QbotHandleMap[E]>> {

@@ -30,7 +30,7 @@ declare module "@/index" {
   }
 }
 
-interface UserPreferences {
+export interface UserPreferences {
   serverRegion: ServerRegion;
 }
 
@@ -201,7 +201,7 @@ export default class QbotPlugin extends TenMikuPlugin {
       }
       if (isWebhookReplyOpCode(payload.op)) {
         // biome-ignore lint/suspicious/noExplicitAny: any is used for generic payloads
-        const resp = await emitter.trigger(`webhook:${payload.op}`, payload as any, c);
+        const resp = await emitter.run(`webhook:${payload.op}`, payload as any, c);
         return resp || c.json({});
       }
       if (isWebsocketReplyOpCode(payload.op)) {

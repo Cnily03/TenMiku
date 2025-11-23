@@ -88,6 +88,20 @@ export type EventPayloadMap<T extends EventType = EventType> = {
     OpCode.Dispatch,
     T,
     EventTypeDataMap_T<{
+      [EVENT_TYPE.C2C.MESSAGE_CREATE]: {
+        id: string;
+        content: string;
+        timestamp: string;
+        author: {
+          id: string;
+          user_openid: string;
+          union_openid: string;
+        };
+        message_scene: {
+          source: string;
+        };
+        message_type: number;
+      };
       [EVENT_TYPE.GROUP.AT_MESSAGE_CREATE]: {
         id: string;
         content: string;

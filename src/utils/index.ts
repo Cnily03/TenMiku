@@ -170,7 +170,11 @@ interface FuzzySearchResult {
   };
 }
 
-export type ServerRegion = "jp" | "cn";
+export const SUPPORT_REGIONS = ["jp", "cn"] as const;
+export type ServerRegion = (typeof SUPPORT_REGIONS)[number];
+export function isSupportRegion(region: string): region is ServerRegion {
+  return SUPPORT_REGIONS.includes(region as ServerRegion);
+}
 
 const URL_TEMPLATE = {
   MUSIC_LIST: {
