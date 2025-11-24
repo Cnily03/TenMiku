@@ -235,7 +235,9 @@ export default class QbotPlugin extends TenMikuPlugin {
       } else if (e instanceof ConfigError) {
         return c.text(`configuration error: ${e.message}`, 500);
       } else if (e instanceof HTTPError) {
-        this.logger.error(`HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`);
+        this.logger.error(
+          `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
+        );
       }
       this.logger.error(e);
       return c.text("internal server error", 500);
@@ -248,7 +250,7 @@ export default class QbotPlugin extends TenMikuPlugin {
         return this.logger.error(`configuration error: ${e.message}`);
       } else if (e instanceof HTTPError) {
         return this.logger.error(
-          `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`
+          `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
         );
       }
       return this.logger.error("internal server error:", e);

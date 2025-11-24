@@ -487,8 +487,8 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
         hashKey: calcHashKey(),
       };
       const executed = await cmd.runPrefix(content, env).catch((e) => {
-        logger.error(`Failed to execute command: ${content}`, e);
-        return false;
+        logger.error(`Failed to execute command: ${content}`);
+        throw e;
       });
       if (executed) {
         logger.info(`Command executed: ${content}`);
