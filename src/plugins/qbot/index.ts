@@ -8,6 +8,7 @@ import { TenMikuPlugin } from "@/core/plugin";
 import type TenMiku from "@/index";
 import type { TenmikuProtected } from "@/index";
 import type { ServerRegion } from "@/utils";
+import { Logger } from "@/utils/logger";
 import { QBotApi } from "./api";
 import { ConfigError } from "./error";
 import { QBotEventEmitter } from "./event/emitter";
@@ -42,6 +43,11 @@ export interface QBotHonoEnv extends HonoEnv {
 }
 
 export interface QBotPluginOptions {
+  /**
+   * 是否使用沙箱环境
+   * @default false
+   */
+  sandbox?: boolean;
   cache?: Cache;
   database?: Database;
 }
@@ -56,10 +62,12 @@ export default class QbotPlugin extends TenMikuPlugin {
   readonly api: QBotApi;
   protected cache?: Cache;
   protected database?: Database;
+  readonly logger: Logger;
 
   constructor(options?: QBotPluginOptions) {
     super("qbot");
-    this.api = new QBotApi();
+    this.logger = new Logger("QBot");
+    this.api = new QBotApi({ sandbox: options?.sandbox ?? false });
     if (options?.cache) {
       this.cache = options.cache;
       this.api.setCache(options.cache);
@@ -67,10 +75,14 @@ export default class QbotPlugin extends TenMikuPlugin {
     if (options?.database) {
       this.database = options.database;
       this.database.check().then((ok) => {
-        if (ok) console.log("[QBot] database connected.");
+        if (ok) this.logger.info("Database connected.");
       });
       this.initDatabase();
     }
+  }
+
+  get sandbox() {
+    return this.api.sandbox;
   }
 
   async initDatabase() {
@@ -84,7 +96,7 @@ export default class QbotPlugin extends TenMikuPlugin {
         server_region VARCHAR(16)
       );
     `)
-      .catch(console.error);
+      .catch(this.logger.extend("Database").error);
     client.release();
   }
 
@@ -104,7 +116,7 @@ export default class QbotPlugin extends TenMikuPlugin {
     `,
         [openid, preferences.serverRegion]
       )
-      .catch(console.error);
+      .catch(this.logger.extend("Database").error);
     client.release();
   }
 
@@ -119,7 +131,7 @@ export default class QbotPlugin extends TenMikuPlugin {
     `,
         [openid]
       )
-      .catch(console.error);
+      .catch(this.logger.extend("Database").error);
     client.release();
     if (res && res.rows.length > 0) {
       const row = res.rows[0] as { server_region: string };
@@ -223,21 +235,23 @@ export default class QbotPlugin extends TenMikuPlugin {
       } else if (e instanceof ConfigError) {
         return c.text(`configuration error: ${e.message}`, 500);
       } else if (e instanceof HTTPError) {
-        console.error(`HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`);
+        this.logger.error(`HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`);
       }
-      console.error(e);
+      this.logger.error(e);
       return c.text("internal server error", 500);
     });
 
     emitter.onError(async (e) => {
       if (e instanceof ZodError) {
-        return console.warn(`request validation error: ${e.message}`);
+        return this.logger.warn(`request validation error: ${e.message}`);
       } else if (e instanceof ConfigError) {
-        return console.error(`configuration error: ${e.message}`);
+        return this.logger.error(`configuration error: ${e.message}`);
       } else if (e instanceof HTTPError) {
-        return console.error(`HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`);
+        return this.logger.error(
+          `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text()}`
+        );
       }
-      return console.error("internal server error:", e);
+      return this.logger.error("internal server error:", e);
     });
 
     return app;

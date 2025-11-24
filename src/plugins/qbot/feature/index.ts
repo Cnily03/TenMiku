@@ -200,6 +200,7 @@ function filterSearchResults<T extends { score: number }>(
 }
 
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
+  const logger = qbot.logger.head({ sandbox: qbot.api.sandbox });
   const calcHashKey = () =>
     sha256(new TextEncoder().encode(qbot.api.getApiEnv().appSecret))
       .toBase64()
@@ -269,16 +270,17 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     }
 
     const music = searchResult[0]!.item;
+    const info = music.infos?.at(0) ?? music;
     const difficultyItems = await tenmiku.utils.at(region).getDifficultiesByMusicId(music.id);
     const difficultyName = parseDifficulty(difficulty, difficultyItems);
     const difficultyItem = difficultyItems.find((d) => d.musicDifficulty.toLowerCase() === difficultyName);
     if (!difficultyItem) {
-      return await sendPassiveMsg(event, "content", `未找到歌曲 ${music.title} 的难度: ${difficulty}`).void();
+      return await sendPassiveMsg(event, "content", `未找到歌曲 ${info.title} 的难度: ${difficulty}`).void();
     }
 
     const imageLink = await tenmiku.utils.at(region).getMusicChartById(music.id, difficultyItem.musicDifficulty);
-    console.log(
-      `Send music chart for ${music.title} - Lv. ${difficultyItem.playLevel} ${difficultyItem.musicDifficulty}`
+    logger.debug(
+      `Sending music chart for ${info.title} - Lv. ${difficultyItem.playLevel} ${difficultyItem.musicDifficulty}`
     );
 
     const uploadResp = await ky
@@ -292,12 +294,10 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       .json<{ name: string }>();
 
     if (!uploadResp.name) {
-      return console.log(
+      return logger.error(
         `Failed to download music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
       );
     }
-
-    const info = music.infos?.at(0) ?? music;
     const content = [
       `歌曲: ${info.title}`,
       `难度: Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`,
@@ -389,7 +389,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       ],
     };
 
-    console.log(`Send music details for ${music.title}`);
+    logger.debug(`Sending music details for ${music.title}`);
     await sendPassiveMsg(event, "ark", { ark }).void();
   });
 
@@ -427,10 +427,10 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       .json<{ name: string }>();
 
     if (!uploadResp.name) {
-      return console.log(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
+      return logger.error(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
     }
 
-    console.log(`Upload and send music silk for ${music.title} - ${item.musicVocalType}`);
+    logger.debug(`Uploading and sending music silk for ${music.title} - ${item.musicVocalType}`);
 
     const media = await prepareRichMedia(
       event,
@@ -447,13 +447,22 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
   emitter.on(
     "*:dispatch",
     whenType([EVENT_TYPE.C2C.MESSAGE_CREATE, EVENT_TYPE.GROUP.AT_MESSAGE_CREATE], async (data) => {
+      logger.tail({ op: data.op, t: data.t, content: data.d.content }).debug("Received message event");
       const content = data.d.content.trim();
       const preferences = (await qbot.queryPreferences(openuid(data))) ?? {
         serverRegion: "cn",
       };
-      const executed = await cmd.runPrefix(content, { event: data, preferences, hashKey: calcHashKey() });
+      const env: CmdEnv = {
+        event: data,
+        preferences,
+        hashKey: calcHashKey(),
+      };
+      const executed = await cmd.runPrefix(content, env).catch((e) => {
+        logger.error(`Failed to execute command: ${content}`, e);
+        return false;
+      });
       if (executed) {
-        console.log(`Command executed: ${content}`);
+        logger.info(`Command executed: ${content}`);
       }
     })
   );

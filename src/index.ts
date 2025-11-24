@@ -3,6 +3,7 @@ import type { TenMikuPlugin } from "@/core/plugin";
 import InteractivePlugin from "@/plugins/interactive";
 import QbotPlugin from "@/plugins/qbot";
 import { type ServerRegion, TenMikuUtils } from "@/utils";
+import { Logger } from "@/utils/logger";
 import type { Database } from "./core/net/database";
 
 export interface TenmikuProtected {
@@ -19,17 +20,23 @@ interface TenMikuOptions {
    * For `QbotPlugin`
    */
   database?: Database;
+  /**
+   * For `QbotPlugin`
+   */
+  sandbox?: boolean;
 }
 
 export class TenMiku {
   private plugins: TenMikuPlugin[] = [];
   protected cache?: Cache;
   readonly utils: TenMikuUtils;
+  readonly logger: Logger;
 
   constructor(options?: TenMikuOptions) {
+    this.logger = new Logger("TenMiku");
     this.cache = options?.cache;
     this?.cache?.check().then((ok) => {
-      if (ok) console.log("[TenMiku] Cache is ready.");
+      if (ok) this.logger.info("Cache is ready.");
     });
     this.utils = new TenMikuUtils({
       cache: this.cache,
@@ -41,6 +48,7 @@ export class TenMiku {
       new QbotPlugin({
         cache: this.cache,
         database: options?.database,
+        sandbox: options?.sandbox ?? false,
       })
     );
   }

@@ -3,7 +3,9 @@ import type { Cache } from "@/core/net/cache";
 import { ConfigError } from "../error";
 import type { PrepareRichMediaRequest, RichMedia, SendMessageRequest, SendMessageResponse } from "./types";
 
-const QBOT_OPENAPI_ENDPOINT = "https://api.sgroup.qq.com";
+const QBOT_ACCESS_TOKEN_ENDPOINT = "https://bots.qq.com/app/getAppAccessToken";
+const QBOT_PROD_OPENAPI_ENDPOINT = "https://api.sgroup.qq.com";
+const QBOT_SANDBOX_OPENAPI_ENDPOINT = "https://sandbox.api.sgroup.qq.com";
 
 interface AccessTokenResponse {
   access_token: string;
@@ -13,12 +15,22 @@ interface AccessTokenResponse {
   expires_in: string;
 }
 
-export interface QbotApiOptions {
+export interface QbotApiHttpOptions {
   prefixUrl?: string;
   retry?: number;
+}
+
+export interface QbotApiBaseOptions {
+  /**
+   * 是否使用沙箱环境
+   * @default false
+   */
+  sandbox?: boolean;
   env?: Partial<QBotApiEnv>;
   cache?: Cache;
 }
+
+export type QbotApiOptions = QbotApiBaseOptions & QbotApiHttpOptions;
 
 export interface QBotApiEnv {
   appId: string;
@@ -26,6 +38,7 @@ export interface QBotApiEnv {
 }
 
 export class QBotApi {
+  private _sandbox: boolean;
   readonly http: KyInstance;
   protected cache?: Cache;
   private accessTokenCache = {
@@ -35,7 +48,7 @@ export class QBotApi {
      */
     expiresAt: 0,
   };
-  protected opts: Omit<Required<QbotApiOptions>, "env" | "cache">;
+  protected optsHttp: Required<QbotApiHttpOptions>;
   private env: QBotApiEnv;
 
   constructor(options?: QbotApiOptions) {
@@ -43,22 +56,27 @@ export class QBotApi {
       appId: options?.env?.appId || process?.env?.QBOT_APP_ID || "",
       appSecret: options?.env?.appSecret || process?.env?.QBOT_APP_SECRET || "",
     };
+    this._sandbox = options?.sandbox ?? false;
     this.cache = options?.cache;
-    const _opts = Object.assign(
+    const _opts: Partial<QbotApiOptions> & Required<QbotApiHttpOptions> = Object.assign(
       {},
       {
-        prefixUrl: QBOT_OPENAPI_ENDPOINT,
+        prefixUrl: this.OPENAPI_ENDPOINT,
         retry: 3,
       },
       options
     );
-    delete (_opts as Partial<QbotApiOptions>).env;
-    delete (_opts as Partial<QbotApiOptions>).cache;
-    this.opts = _opts;
-
+    delete _opts.sandbox;
+    delete _opts.env;
+    delete _opts.cache;
+    this.optsHttp = _opts;
+    const that = this;
     this.http = ky.create({
-      prefixUrl: this.opts.prefixUrl,
-      retry: this.opts.retry,
+      // prefixUrl: this.opts.prefixUrl,
+      get prefixUrl() {
+        return that.OPENAPI_ENDPOINT;
+      },
+      ...this.optsHttp,
       hooks: {
         beforeRequest: [
           async (request) => {
@@ -68,6 +86,18 @@ export class QBotApi {
         ],
       },
     });
+  }
+
+  get OPENAPI_ENDPOINT() {
+    return this._sandbox ? QBOT_SANDBOX_OPENAPI_ENDPOINT : QBOT_PROD_OPENAPI_ENDPOINT;
+  }
+
+  get sandbox(): boolean {
+    return this._sandbox;
+  }
+
+  setSandbox(sandbox: boolean) {
+    this._sandbox = sandbox;
   }
 
   private async getValidAccessToken() {
@@ -82,13 +112,13 @@ export class QBotApi {
       throw new ConfigError("QBotApi env not set");
     }
     const resp = await ky
-      .post("https://bots.qq.com/app/getAppAccessToken", {
-        // prefixUrl: "",
+      .post(QBOT_ACCESS_TOKEN_ENDPOINT, {
         json: {
           appId: this.env.appId,
           clientSecret: this.env.appSecret,
         },
-        retry: this.opts.retry,
+        ...this.optsHttp,
+        prefixUrl: "",
       })
       .json<AccessTokenResponse>();
 
