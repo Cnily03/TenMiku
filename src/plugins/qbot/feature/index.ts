@@ -161,15 +161,14 @@ function _prepareRichMedia<T extends EventPayload<OpCode.Dispatch>>(
 
 function filterSearchResults<T extends { score: number }>(
   results: T[],
-  absReduce = 0.25,
+  absReduce = 0.15,
   reduceRate = 0.4,
-  maxRateReduce = 0.25
+  maxRateReduce = 0.3
 ) {
   if (results.length === 0) return results;
   const scores = results.map((r) => r.score);
   const max = Math.max(...scores);
   const min = Math.min(...scores);
-  if (max <= absReduce) return [];
   // 找到一个点，两边到这个点的距离的标准差差最小
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
   // 离中位数最近的点，从小到大排序
@@ -201,8 +200,26 @@ function filterSearchResults<T extends { score: number }>(
   const rateReduce = (opt - min) * reduceRate;
   // 筛选基线 - 绝对降低值 - 可变降低值
   const threshold = opt - absReduce - Math.min(rateReduce, maxRateReduce);
+  if (max <= threshold) return [];
   if (threshold < 0) return results;
   return results.filter((r) => r.score >= threshold);
+}
+
+function localLangMusic(item: MusicListItem, i18nTitles: Record<string, string>) {
+  if (item.infos && item.infos.length > 0) {
+    return {
+      title: i18nTitles[item.id] || item.infos[0]!.title,
+      lyricist: item.infos[0]!.lyricist,
+      composer: item.infos[0]!.composer,
+      arranger: item.infos[0]!.arranger,
+    };
+  }
+  return {
+    title: i18nTitles[item.id] || item.title,
+    lyricist: item.lyricist,
+    composer: item.composer,
+    arranger: item.arranger,
+  };
 }
 
 const unique = (arr: string[]) => Array.from(new Set(arr));
@@ -223,6 +240,8 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     hashKey: string;
     preferences: UserPreferences;
     event: EventPayload<OpCode.Dispatch, EVENT_TYPE.C2C.MESSAGE_CREATE | EVENT_TYPE.GROUP.AT_MESSAGE_CREATE>;
+    i18nTitles: Record<string, string>;
+    i18nVocals: Record<string, string>;
   }
 
   const cmd = new CommandHelper<CmdEnv>("/");
@@ -306,7 +325,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     // not found
     if (candidates.length === 0) {
       if (topMusicResults.length <= 1) {
-        const info = topMusicResults[0]!.infos?.[0] ?? topMusicResults[0]!;
+        const info = localLangMusic(topMusicResults[0]!, ctx.env.i18nTitles);
         return await sendPassiveMsg(
           event,
           "content",
@@ -325,7 +344,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
           `以下搜索结果中无法找到匹配的难度：`,
           topMusicResults
             .map((m) => {
-              const info = m.infos?.[0] ?? m;
+              const info = localLangMusic(m, ctx.env.i18nTitles);
               return `❯ ${info.title}`;
             })
             .join("\n"),
@@ -343,7 +362,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
           candidates
             .map(([i, j]) => {
               const music = topMusicResults[i]!;
-              const info = music.infos?.[0] ?? music;
+              const info = localLangMusic(music, ctx.env.i18nTitles);
               const difficultyItem = topdifficultyItems[i]![j]!;
               return `❯ ${info.title} - Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`;
             })
@@ -356,7 +375,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const [_i, _j] = candidates[0]!;
 
     const music = searchResult[_i]!.item;
-    const info = music.infos?.[0] ?? music;
+    const info = localLangMusic(music, ctx.env.i18nTitles);
     const difficultyItem = topdifficultyItems[_i]![_j]!;
 
     const imageLink = await tenmiku.utils.at(region).getMusicChartById(music.id, difficultyItem.musicDifficulty);
@@ -448,7 +467,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
           `搜索到多个相关歌曲：`,
           topMusicResults
             .map((m) => {
-              const info = m.infos?.[0] ?? m;
+              const info = localLangMusic(m, ctx.env.i18nTitles);
               return `❯ ${info.title}`;
             })
             .join("\n"),
@@ -464,7 +483,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       tenmiku.utils.at(region).getOutsideCharacters(),
     ]);
 
-    const info = music.infos?.[0] ?? music;
+    const info = localLangMusic(music, ctx.env.i18nTitles);
 
     const promptText = info.title;
     const descText = `歌曲详情 - ${info.title}`;
@@ -474,16 +493,8 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       .join("\n");
     const vocalsText = vocals
       .map((v) => {
-        const i18n = {
-          original_song: "虚拟歌手 ver.",
-          sekai: "「世界」ver.",
-          virtual_singer: "虚拟歌手 ver.",
-          another_vocal: "Another Vocal ver.",
-          instrumental: "纯音乐 ver.",
-          april_fool_2022: "愚人节 ver.",
-        };
         const ver =
-          i18n[v.musicVocalType] ||
+          ctx.env.i18nVocals[v.musicVocalType] ||
           v.caption.replace(/(.\b)ver.?$/i, (_, p1: string) => `${p1.replace(/\s$/, "")} ver.`);
         const charNames = tenmiku.utils
           .at(region)
@@ -551,7 +562,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
           `搜索到多个相关歌曲：`,
           topMusicResults
             .map((m) => {
-              const info = m.infos?.[0] ?? m;
+              const info = localLangMusic(m, ctx.env.i18nTitles);
               return `❯ ${info.title}`;
             })
             .join("\n"),
@@ -623,6 +634,8 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
         event: data,
         preferences,
         hashKey: calcHashKey(),
+        i18nTitles: await tenmiku.utils.at(preferences.serverRegion).getI18nMusicTitles(),
+        i18nVocals: await tenmiku.utils.at(preferences.serverRegion).getI18nMusicVocals(),
       };
       const executed = await cmd.runPrefix(content, env).catch((e) => {
         logger.error(`Failed to execute command: ${content}`);

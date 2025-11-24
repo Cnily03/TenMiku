@@ -35,7 +35,7 @@ export class TenMiku {
   constructor(options?: TenMikuOptions) {
     this.logger = new Logger("TenMiku");
     this.cache = options?.cache;
-    this?.cache?.check().then((ok) => {
+    this.cache?.check().then((ok) => {
       if (ok) this.logger.info("Cache is ready.");
     });
     this.utils = new TenMikuUtils({

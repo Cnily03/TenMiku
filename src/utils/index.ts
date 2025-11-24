@@ -22,7 +22,7 @@ export interface MusicListItem {
   fillerSec: number;
   infos?: {
     title: string;
-    creator: string;
+    creator?: string;
     lyricist: string;
     composer: string;
     arranger: string;
@@ -35,7 +35,7 @@ export interface MusicListItem {
 export interface MusicVocalItem {
   id: number;
   musicId: number;
-  musicVocalType: "original_song" | "sekai" | "another_vocal" | "april_fool_2022";
+  musicVocalType: string;
   seq: number;
   releaseConditionId: number;
   caption: string;
@@ -143,6 +143,14 @@ const URL_TEMPLATE = {
     jp: "https://storage.sekai.best/sekai-jp-assets/music/{width}/{assetbundleName}/{filename}.{ext}",
     cn: "https://storage.sekai.best/sekai-jp-assets/music/{width}/{assetbundleName}/{filename}.{ext}",
   },
+  I18N_TITLE: {
+    jp: "https://i18n-json.sekai.best/ja/music_titles.json",
+    cn: "https://i18n-json.sekai.best/zh-CN/music_titles.json",
+  },
+  I18N_VOCAL: {
+    jp: "https://i18n-json.sekai.best/ja/music_vocal.json",
+    cn: "https://i18n-json.sekai.best/zh-CN/music_vocal.json",
+  },
 };
 
 export class TenMikuUtils {
@@ -199,8 +207,44 @@ export class TenMikuUtils {
   }
 
   async search(keyword: string, limit = 10, offset = 0, noZero = true) {
-    const lists = await this.getMusicLists();
+    const [lists, i18nTitles] = await Promise.all([this.getMusicLists(), this.getI18nMusicTitles()]);
+
+    for (const item of lists) {
+      const localizedTitle = i18nTitles[item.id];
+      if (localizedTitle) {
+        if (!item.infos || item.infos.length === 0) {
+          item.infos = [
+            {
+              title: localizedTitle,
+              lyricist: item.lyricist,
+              composer: item.composer,
+              arranger: item.arranger,
+            },
+          ];
+        } else {
+          item.infos[0]!.title = localizedTitle;
+        }
+      }
+    }
     return this.searchFromLists(keyword, lists, limit, offset, noZero);
+  }
+
+  async getI18nMusicTitles() {
+    const cacheKey = this.cache.at("i18nMusicTitles").at(this.region);
+    let titles = (await cacheKey.get())?.parseJSON<Record<string, string>>();
+    if (titles) return titles;
+    titles = await http.get(this.t("I18N_TITLE")).json<Record<string, string>>();
+    await cacheKey.set(JSON.stringify(titles), 21600);
+    return titles;
+  }
+
+  async getI18nMusicVocals() {
+    const cacheKey = this.cache.at("i18nMusicVocals").at(this.region);
+    let vocals = (await cacheKey.get())?.parseJSON<Record<string, string>>();
+    if (vocals) return vocals;
+    vocals = await http.get(this.t("I18N_VOCAL")).json<Record<string, string>>();
+    await cacheKey.set(JSON.stringify(vocals), 21600);
+    return vocals;
   }
 
   async getAllDifficulties() {

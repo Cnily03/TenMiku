@@ -144,6 +144,8 @@ export default class InteractivePlugin extends TenMikuPlugin {
       return;
     }
 
+    this.TENMIKU.logger.disable();
+
     this.isRunning = true;
     this.rl = readline.createInterface({
       input: process.stdin,

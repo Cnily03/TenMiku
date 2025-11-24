@@ -1,6 +1,7 @@
 import colors from "colors";
 
 export class Logger {
+  private silent = false;
   private prefixes: string[];
   private extraHead: Record<string, unknown> = {};
   private extraTail: Record<string, unknown> = {};
@@ -27,6 +28,16 @@ export class Logger {
     return this.prefixes.join(":");
   }
 
+  disable() {
+    this.silent = true;
+    return this;
+  }
+
+  enable() {
+    this.silent = false;
+    return this;
+  }
+
   extend(...prefixes: string[]): Logger {
     const p = prefixes.filter(Boolean);
     return new Logger(...this.prefixes, ...p);
@@ -48,6 +59,7 @@ export class Logger {
 
   // biome-ignore lint/suspicious/noExplicitAny: generic inputs
   log(message?: any, ...args: any[]) {
+    if (this.silent) return;
     console.log(
       colors.dim(this.timeFmt(new Date())),
       ...(this.scope ? [colors.dim(this.scope.green)] : []),
@@ -60,6 +72,7 @@ export class Logger {
 
   // biome-ignore lint/suspicious/noExplicitAny: generic inputs
   error(message?: any, ...args: any[]) {
+    if (this.silent) return;
     console.error(
       colors.dim(this.timeFmt(new Date())),
       colors.bold(colors.red("ERROR")),
@@ -73,6 +86,7 @@ export class Logger {
 
   // biome-ignore lint/suspicious/noExplicitAny: generic inputs
   warn(message?: any, ...args: any[]) {
+    if (this.silent) return;
     console.warn(
       colors.dim(this.timeFmt(new Date())),
       colors.bold(colors.yellow(" WARN")),
@@ -86,6 +100,7 @@ export class Logger {
 
   // biome-ignore lint/suspicious/noExplicitAny: generic inputs
   info(message?: any, ...args: any[]) {
+    if (this.silent) return;
     console.info(
       colors.dim(this.timeFmt(new Date())),
       colors.bold(colors.blue(" INFO")),
@@ -99,6 +114,7 @@ export class Logger {
 
   // biome-ignore lint/suspicious/noExplicitAny: generic inputs
   debug(message?: any, ...args: any[]) {
+    if (this.silent) return;
     console.debug(
       colors.dim(this.timeFmt(new Date())),
       colors.bold(colors.magenta("DEBUG")),

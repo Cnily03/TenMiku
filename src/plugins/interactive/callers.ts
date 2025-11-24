@@ -107,11 +107,14 @@ async function listMusics(utils: TenMikuUtils, page: number, pageSize: number) {
 }
 
 async function searchMusics(utils: TenMikuUtils, keyword: string, limit: number) {
-  const lists = await utils.getMusicLists();
-  const results = await utils.searchFromLists(keyword, lists, limit);
+  const results = await utils.search(keyword, limit);
   const maxTitleDisplayLength = results.reduce((max, res) => {
     const titleLength = displayLength(res.item.title);
     return Math.max(max, titleLength);
+  }, 0);
+  const maxIdLength = results.reduce((max, res) => {
+    const idLength = String(res.item.id).length;
+    return Math.max(max, idLength);
   }, 0);
   const paddingScores = results.map((res) => {
     const titleLength = displayLength(res.item.title);
@@ -119,8 +122,8 @@ async function searchMusics(utils: TenMikuUtils, keyword: string, limit: number)
     const score = (Math.round(res.score * 100) / 100).toFixed(2);
     return pad + `(${score})`.magenta.dim;
   });
-  console.log(`Found ${results.length} results for ${JSON.stringify(keyword)}:`);
   const credits = getCreditArray(results.map((res) => [res.item, [res.target]] as [MusicListItem, string[]]));
+  console.log(`Found ${results.length} results for ${JSON.stringify(keyword)}:`);
   for (let i = 0; i < results.length; i++) {
     const res = results[i]!;
     const item = res.item;
@@ -137,14 +140,16 @@ async function searchMusics(utils: TenMikuUtils, keyword: string, limit: number)
       res.target === item.title
         ? `${searchText}  ${paddingScores[i]}`
         : `${item.title}  ${paddingScores[i]} ${colors.dim(`\n   ${" ".repeat(String(item.id).length)}  ${searchText}`)}`;
-    const msgs = [`- ${`[${item.id}]`.yellow} ${title}`, `  ${credit.join("  ").dim}`];
+    const msgs = [
+      `- ${`[${item.id.toString().padStart(maxIdLength, " ")}]`.yellow} ${title}`,
+      `  ${credit.join("  ").dim}`,
+    ];
     console.log(msgs.join("\n"));
   }
 }
 
 async function getChart(utils: TenMikuUtils, difficulty: MusicDifficulty, keyword: string) {
-  const lists = await utils.getMusicLists();
-  const result = await utils.searchFromLists(keyword, lists, 1);
+  const result = await utils.search(keyword, 1);
   if (result.length === 0) {
     console.log(colors.red(`No music found for keyword: ${keyword}`));
     return;
