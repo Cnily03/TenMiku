@@ -9,7 +9,7 @@ const bindings = dotenv.config({ path: [".env.local", ".env"] }).parsed;
 const cache = config.cache.enable ? new Cache(config.cache.url) : undefined;
 const database = config.database.enable ? new Database(config.database) : undefined;
 
-const tenmiku = new TenMiku({ cache, database, sandbox: false });
+const tenmiku = new TenMiku({ cache, database, sandbox: true });
 
 const app = tenmiku.createHonoApp();
 
