@@ -1,6 +1,6 @@
 import { Hono, type Env as HonoEnv } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { HTTPError } from "ky";
+import { HTTPError, TimeoutError } from "ky";
 import { ZodError } from "zod";
 import type { Cache } from "@/core/net/cache";
 import type { Database } from "@/core/net/database";
@@ -238,6 +238,8 @@ export default class QbotPlugin extends TenMikuPlugin {
         this.logger.error(
           `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
         );
+      } else if (e instanceof TimeoutError) {
+        this.logger.error(`request timeout: ${e.request.method.toUpperCase()} ${e.request.url}`);
       }
       this.logger.error(e);
       return c.text("internal server error", 500);
@@ -252,6 +254,8 @@ export default class QbotPlugin extends TenMikuPlugin {
         return this.logger.error(
           `HTTP error: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
         );
+      } else if (e instanceof TimeoutError) {
+        return this.logger.error(`request timeout: ${e.request.method.toUpperCase()} ${e.request.url}`);
       }
       return this.logger.error("internal server error:", e);
     });
