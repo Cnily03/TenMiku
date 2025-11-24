@@ -35,7 +35,7 @@ export interface MusicListItem {
 export interface MusicVocalItem {
   id: number;
   musicId: number;
-  musicVocalType: "original_song" | "sekai" | "another_vocal";
+  musicVocalType: "original_song" | "sekai" | "another_vocal" | "april_fool_2022";
   seq: number;
   releaseConditionId: number;
   caption: string;

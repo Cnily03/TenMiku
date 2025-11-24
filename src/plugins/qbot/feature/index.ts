@@ -312,6 +312,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       `Sending music chart for ${info.title} - Lv. ${difficultyItem.playLevel} ${difficultyItem.musicDifficulty}`
     );
 
+    logger.debug(`Uploading music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`);
     const uploadResp = await ky
       .post(`http://silkup.cnily.top:21747/v1/file/store/${ctx.env.hashKey}`, {
         json: {
@@ -324,7 +325,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     if (!uploadResp.name) {
       return logger.error(
-        `Failed to download music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
+        `Failed to upload music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
       );
     }
     const content = [
@@ -444,6 +445,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const bn = item.assetbundleName;
     const mp3Url = tenmiku.utils.at(region).getMusicMp3Url(bn, false);
 
+    logger.debug(`Generating music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
     const uploadResp = await ky
       .post(`http://silkup.cnily.top:21747/v1/silk/encode/${ctx.env.hashKey}`, {
         json: {
@@ -459,8 +461,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return logger.error(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
     }
 
-    logger.debug(`Uploading and sending music silk for ${music.title} - ${item.musicVocalType}`);
-
+    logger.debug(`sending music silk for ${music.title} - ${item.musicVocalType}`);
     const media = await prepareRichMedia(
       event,
       "audio",
