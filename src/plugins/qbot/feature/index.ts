@@ -3,7 +3,13 @@ import { calcSign } from "@plugins/qbot/mw/verify";
 import ky from "ky";
 import { z } from "zod";
 import type TenMiku from "@/index";
-import { isSupportRegion, type MusicDifficultyItem, type ServerRegion, SUPPORT_REGIONS } from "@/utils";
+import {
+  isSupportRegion,
+  type MusicDifficultyItem,
+  type MusicListItem,
+  type ServerRegion,
+  SUPPORT_REGIONS,
+} from "@/utils";
 import type QbotPlugin from "..";
 import type { UserPreferences } from "..";
 import type { QBotApi } from "../api";
@@ -269,11 +275,34 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
     }
 
-    const music = searchResult[0]!.item;
+    // same scores as the top
+    const topMusicResults: MusicListItem[] = [];
+    for (const result of searchResult) {
+      if (result.score === searchResult[0]!.score) {
+        topMusicResults.push(result.item);
+      } else {
+        break;
+      }
+    }
+    const topdifficultyItems = await tenmiku.utils
+      .at(region)
+      .getDifficultiesByMusicId(topMusicResults.map((m) => m.id));
+    let _j = -1;
+    let _i = topdifficultyItems.findIndex((it) => {
+      const dname = parseDifficulty(difficulty, it);
+      return it.some((d, i) => {
+        _j = i;
+        return d.musicDifficulty.toLowerCase() === dname;
+      });
+    });
+    if (_i < 0) {
+      _i = 0;
+      _j = -1;
+    }
+
+    const music = searchResult[_i]!.item;
     const info = music.infos?.at(0) ?? music;
-    const difficultyItems = await tenmiku.utils.at(region).getDifficultiesByMusicId(music.id);
-    const difficultyName = parseDifficulty(difficulty, difficultyItems);
-    const difficultyItem = difficultyItems.find((d) => d.musicDifficulty.toLowerCase() === difficultyName);
+    const difficultyItem = topdifficultyItems[_i]!.at(_j);
     if (!difficultyItem) {
       return await sendPassiveMsg(event, "content", `未找到歌曲 ${info.title} 的难度: ${difficulty}`).void();
     }

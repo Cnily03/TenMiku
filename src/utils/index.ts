@@ -239,9 +239,15 @@ export class TenMikuUtils {
     return characters;
   }
 
-  async getDifficultiesByMusicId(musicId: number) {
+  async getDifficultiesByMusicId(musicId: number): Promise<MusicDifficultyItem[]>;
+  async getDifficultiesByMusicId(musicId: number[]): Promise<MusicDifficultyItem[][]>;
+  async getDifficultiesByMusicId(musicId: number | number[]) {
     const allDifficulties = await this.getAllDifficulties();
-    return allDifficulties.filter((diff) => diff.musicId === musicId);
+    if (typeof musicId === "number") {
+      return allDifficulties.filter((diff) => diff.musicId === musicId);
+    } else {
+      return musicId.map((id) => allDifficulties.filter((diff) => diff.musicId === id));
+    }
   }
 
   async getMusicChartById(musicId: number, difficulty: MusicDifficulty) {
