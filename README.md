@@ -10,7 +10,7 @@ The credits of fetched materials and information about *Project Sekai: Colorful 
 
 Resources related to games that are currently or will be used directly or derivatively, have already, or should, comply with the official [Guidelines](https://pjsekai.sega.jp/guideline/index.html) and [Terms of Service](https://pjsekai.sega.jp/terms/index.html) of the game. Streaming resouces of the game, have already, or should, comply with the [Streaming Guidelines](https://www.sega.co.jp/streaming_guideline/).
 
-Some materials about charactors of visual singers - *i.e. MEIKO, KAITO* - may/will be used in derivative works. The subject of this repository and its users, have already, or should, comply with the [Guidelines](https://piapro.jp/license/character_guideline) and [Agreements](http://poppro.cn/html/newslist.html?hId=NA==).
+Some materials about charactors of virtual singers - *i.e. MEIKO, KAITO* - may/will be used in derivative works. The subject of this repository and its users, have already, or should, comply with the [Guidelines](https://piapro.jp/license/character_guideline) and [Agreements](http://poppro.cn/html/newslist.html?hId=NA==).
 
 Due to untimely updates or loopholes in legal information, if there are any omissions or conflicts with existing legal texts, this repository and its derivatives shall follow the legal texts of the upstream (copyright holder). *i.e. [Creative Commons License to Crypton's Characters](https://piapro.net/license)*.
 
