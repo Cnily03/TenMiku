@@ -205,6 +205,8 @@ function filterSearchResults<T extends { score: number }>(
   return results.filter((r) => r.score >= threshold);
 }
 
+const unique = (arr: string[]) => Array.from(new Set(arr));
+
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
   const logger = qbot.logger.head(qbot.api.sandbox ? { sandbox: qbot.api.sandbox } : {});
   const calcHashKey = () =>
@@ -232,15 +234,17 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     if (!qbot.databaseAvailable()) return sendPassiveMsg(data, "content", "该功能暂不可用").void();
 
     const help = () => {
-      return ["指令格式: /server 地区", `地区 可选值: ${SUPPORT_REGIONS.join(", ")}`].join("\n");
+      return ["指令格式：/server 地区", "可选值「地区」：", `${SUPPORT_REGIONS.map((r) => `❯ ${r}`).join("\n")}`].join(
+        "\n"
+      );
     };
 
-    if (ctx.restArgs.at(0) === undefined) {
+    if (ctx.restArgs[0] === undefined) {
       const region = preferences.serverRegion;
       return await sendPassiveMsg(
         data,
         "content",
-        [`当前服务区偏好: ${SERVER_REGION_TRANSLATION[region]} (${region})`, help()].join("\n")
+        [`当前服务区偏好：〔${SERVER_REGION_TRANSLATION[region]}〕 ${region}`, help()].join("\n")
       ).void();
     }
     const region = ctx.restArgs[0]!.trim().toLowerCase();
@@ -249,7 +253,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(
         data,
         "content",
-        `已将默认服务区偏好设置为: ${SERVER_REGION_TRANSLATION[region]} (${region})`
+        `已将默认服务区偏好设置为：〔${SERVER_REGION_TRANSLATION[region]}〕 (${region})`
       ).void();
     }
     return await sendPassiveMsg(data, "content", help()).void();
@@ -263,7 +267,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const [difficulty, musicName] = ctx.restArgs;
 
     const help = () => {
-      return ["指令格式: /谱面 难度 歌曲名", "难度和歌曲名支持模糊匹配"].join("\n");
+      return ["指令格式：/谱面 难度 歌曲名", "难度和歌曲名支持模糊匹配"].join("\n");
     };
 
     if (!difficulty || !musicName) {
@@ -272,7 +276,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
-      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+      return await sendPassiveMsg(event, "content", `未搜索到相关歌曲：${musicName}`).void();
     }
 
     // same scores as the top
@@ -287,25 +291,73 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
     const topdifficultyItems = await tenmiku.utils
       .at(region)
       .getDifficultiesByMusicId(topMusicResults.map((m) => m.id));
-    let _j = -1;
-    let _i = topdifficultyItems.findIndex((it) => {
-      const dname = parseDifficulty(difficulty, it);
-      return it.some((d, i) => {
-        _j = i;
-        return d.musicDifficulty.toLowerCase() === dname;
-      });
-    });
-    if (_i < 0) {
-      _i = 0;
-      _j = -1;
+
+    // music index, difficulty index
+    const candidates: [number, number][] = [];
+    for (let i = 0; i < topdifficultyItems.length; i++) {
+      for (let j = 0; j < topdifficultyItems[i]!.length; j++) {
+        const dname = parseDifficulty(difficulty, topdifficultyItems[i]);
+        if (topdifficultyItems[i]![j]!.musicDifficulty.toLowerCase() === dname) {
+          candidates.push([i, j]);
+        }
+      }
     }
 
-    const music = searchResult[_i]!.item;
-    const info = music.infos?.at(0) ?? music;
-    const difficultyItem = topdifficultyItems[_i]!.at(_j);
-    if (!difficultyItem) {
-      return await sendPassiveMsg(event, "content", `未找到歌曲 ${info.title} 的难度: ${difficulty}`).void();
+    // not found
+    if (candidates.length === 0) {
+      if (topMusicResults.length <= 1) {
+        const info = topMusicResults[0]!.infos?.[0] ?? topMusicResults[0]!;
+        return await sendPassiveMsg(
+          event,
+          "content",
+          [
+            `搜索到歌曲但难度不匹配，相关信息如下`,
+            `----------`,
+            unique([topMusicResults[0]!.title, info.title]).join("\n"),
+            topdifficultyItems[0]!.map((d) => `❯ Lv. ${d.playLevel} ${capitalize(d.musicDifficulty)}`).join("\n"),
+          ].join("\n")
+        ).void();
+      }
+      return await sendPassiveMsg(
+        event,
+        "content",
+        [
+          `以下搜索结果中无法找到匹配的难度：`,
+          topMusicResults
+            .map((m) => {
+              const info = m.infos?.[0] ?? m;
+              return `❯ ${info.title}`;
+            })
+            .join("\n"),
+        ].join("\n")
+      ).void();
     }
+
+    // more than 1 candidate
+    if (candidates.length > 1) {
+      return await sendPassiveMsg(
+        event,
+        "content",
+        [
+          `匹配到多个符合条件的谱面：`,
+          candidates
+            .map(([i, j]) => {
+              const music = topMusicResults[i]!;
+              const info = music.infos?.[0] ?? music;
+              const difficultyItem = topdifficultyItems[i]![j]!;
+              return `❯ ${info.title} - Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`;
+            })
+            .join("\n"),
+        ].join("\n")
+      ).void();
+    }
+
+    // only 1 candidate
+    const [_i, _j] = candidates[0]!;
+
+    const music = searchResult[_i]!.item;
+    const info = music.infos?.[0] ?? music;
+    const difficultyItem = topdifficultyItems[_i]![_j]!;
 
     const imageLink = await tenmiku.utils.at(region).getMusicChartById(music.id, difficultyItem.musicDifficulty);
     logger.debug(
@@ -329,12 +381,12 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       );
     }
     const content = [
-      `歌曲: ${info.title}`,
-      `难度: Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`,
-      `物量: ${difficultyItem.totalNoteCount} nts`,
-      `作词: ${info.lyricist}`,
-      `作曲: ${info.composer}`,
-      `编曲: ${info.arranger}`,
+      `歌曲：${info.title}`,
+      `难度：Lv. ${difficultyItem.playLevel} ${capitalize(difficultyItem.musicDifficulty)}`,
+      `物量：${difficultyItem.totalNoteCount} nts`,
+      `作词：${info.lyricist}`,
+      `作曲：${info.composer}`,
+      `编曲：${info.arranger}`,
     ].join("\n");
 
     try {
@@ -370,12 +422,38 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     const musicName = ctx.rest.trim();
     if (!musicName) {
-      return await sendPassiveMsg(event, "content", "指令格式: /查曲 歌曲名").void();
+      return await sendPassiveMsg(event, "content", "指令格式：/查曲 歌曲名").void();
     }
 
     const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
-      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+      return await sendPassiveMsg(event, "content", `未搜索到相关歌曲：${musicName}`).void();
+    }
+
+    // same scores as the top
+    const topMusicResults: MusicListItem[] = [];
+    for (const result of searchResult) {
+      if (result.score === searchResult[0]!.score) {
+        topMusicResults.push(result.item);
+      } else {
+        break;
+      }
+    }
+
+    if (topMusicResults.length > 1) {
+      return await sendPassiveMsg(
+        event,
+        "content",
+        [
+          `搜索到多个相关歌曲：`,
+          topMusicResults
+            .map((m) => {
+              const info = m.infos?.[0] ?? m;
+              return `❯ ${info.title}`;
+            })
+            .join("\n"),
+        ].join("\n")
+      ).void();
     }
 
     const music = searchResult[0]!.item;
@@ -386,8 +464,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       tenmiku.utils.at(region).getOutsideCharacters(),
     ]);
 
-    const unique = (arr: string[]) => Array.from(new Set(arr));
-    const info = music.infos?.at(0) ?? music;
+    const info = music.infos?.[0] ?? music;
 
     const promptText = info.title;
     const descText = `歌曲详情 - ${info.title}`;
@@ -415,10 +492,10 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
             if (c.name) return c.name;
             else return [c.firstName, c.givenName].filter(Boolean).join(" ");
           });
-        return `${ver} ★ ${charNames.join("、")}`;
+        return `${ver.replace(/\s*ver\.?$/i, "")} ★ ${charNames.join("、")}`;
       })
       .join("\n");
-    const creditText = [`作词: ${info.lyricist}`, `作曲: ${info.composer}`, `编曲: ${info.arranger}`].join("\n");
+    const creditText = [`作词：${info.lyricist}`, `作曲：${info.composer}`, `编曲：${info.arranger}`].join("\n");
 
     const ark: Ark = {
       template_id: 23,
@@ -448,12 +525,38 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     const musicName = ctx.rest.trim();
     if (!musicName) {
-      return await sendPassiveMsg(event, "content", "指令格式: /听曲 歌曲名").void();
+      return await sendPassiveMsg(event, "content", "指令格式：/听曲 歌曲名").void();
     }
 
     const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
-      return await sendPassiveMsg(event, "content", `未找到歌曲: ${musicName}`).void();
+      return await sendPassiveMsg(event, "content", `未搜索到相关歌曲：${musicName}`).void();
+    }
+
+    // same scores as the top
+    const topMusicResults: MusicListItem[] = [];
+    for (const result of searchResult) {
+      if (result.score === searchResult[0]!.score) {
+        topMusicResults.push(result.item);
+      } else {
+        break;
+      }
+    }
+
+    if (topMusicResults.length > 1) {
+      return await sendPassiveMsg(
+        event,
+        "content",
+        [
+          `搜索到多个相关歌曲：`,
+          topMusicResults
+            .map((m) => {
+              const info = m.infos?.[0] ?? m;
+              return `❯ ${info.title}`;
+            })
+            .join("\n"),
+        ].join("\n")
+      ).void();
     }
 
     const music = searchResult[0]!.item;
