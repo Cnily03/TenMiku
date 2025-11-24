@@ -200,7 +200,7 @@ function filterSearchResults<T extends { score: number }>(
 }
 
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
-  const logger = qbot.logger.head({ sandbox: qbot.api.sandbox });
+  const logger = qbot.logger.head(qbot.api.sandbox ? { sandbox: qbot.api.sandbox } : {});
   const calcHashKey = () =>
     sha256(new TextEncoder().encode(qbot.api.getApiEnv().appSecret))
       .toBase64()
