@@ -493,8 +493,16 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       .join("\n");
     const vocalsText = vocals
       .map((v) => {
+        const i18n = {
+          original_song: "虚拟歌手 ver.",
+          sekai: "「世界」ver.",
+          virtual_singer: "虚拟歌手 ver.",
+          another_vocal: "Another Vocal ver.",
+          instrumental: "纯音乐 ver.",
+          april_fool_2022: "愚人节 ver.",
+        } as Record<string, string>;
         const ver =
-          ctx.env.i18nVocals[v.musicVocalType] ||
+          i18n[v.musicVocalType] ||
           v.caption.replace(/(.\b)ver.?$/i, (_, p1: string) => `${p1.replace(/\s$/, "")} ver.`);
         const charNames = tenmiku.utils
           .at(region)
