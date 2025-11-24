@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { calcSign } from "@plugins/qbot/mw/verify";
-import ky from "ky";
+import ky, { HTTPError } from "ky";
 import { z } from "zod";
 import type TenMiku from "@/index";
 import {
@@ -325,7 +325,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     if (!uploadResp.name) {
       return logger.error(
-        `Failed to upload music chart for ${music.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
+        `Failed to upload music chart for ${info.title} - ${difficultyItem.musicDifficulty}: ${imageLink}`
       );
     }
     const content = [
@@ -337,12 +337,30 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       `编曲: ${info.arranger}`,
     ].join("\n");
 
-    const media = await prepareRichMedia(
-      event,
-      "image",
-      `http://silkup.cnily.top:21747/v1/file/store/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
-    );
-    await sendPassiveMsg(event, "media", { content, media }).void();
+    try {
+      const media = await prepareRichMedia(
+        event,
+        "image",
+        `http://silkup.cnily.top:21747/v1/file/store/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
+      );
+      await sendPassiveMsg(event, "media", { content, media }).void();
+    } catch (e) {
+      if (e instanceof HTTPError) {
+        logger
+          .head({
+            openuid: openuid(event),
+            opengid: opengid(event),
+            title: info.title,
+            info: info.title,
+            difficulty: difficultyItem.musicDifficulty,
+          })
+          .error(
+            `Failed to send music chart: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
+          );
+      }
+      await sendPassiveMsg(event, "content", "处理时遇到错误，请稍后重试", false).void();
+      throw e;
+    }
   });
 
   cmd.handle("查曲", async (ctx) => {
@@ -461,13 +479,29 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return logger.error(`Failed to generate music silk for ${music.title} - ${item.musicVocalType}: ${mp3Url}`);
     }
 
-    logger.debug(`sending music silk for ${music.title} - ${item.musicVocalType}`);
-    const media = await prepareRichMedia(
-      event,
-      "audio",
-      `http://silkup.cnily.top:21747/v1/silk/encode/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
-    );
-    await sendPassiveMsg(event, "media", { media }).void();
+    logger.debug(`Sending music silk for ${music.title} - ${item.musicVocalType}`);
+    try {
+      const media = await prepareRichMedia(
+        event,
+        "audio",
+        `http://silkup.cnily.top:21747/v1/silk/encode/${ctx.env.hashKey}?name=${encodeURIComponent(uploadResp.name)}`
+      );
+      await sendPassiveMsg(event, "media", { media }).void();
+    } catch (e) {
+      if (e instanceof HTTPError) {
+        logger
+          .head({
+            openuid: openuid(event),
+            opengid: opengid(event),
+            title: music.title,
+          })
+          .error(
+            `Failed to send music silk: ${e.response.status} ${e.response.statusText}: ${await e.response.text().catch(() => "<response body>")}`
+          );
+      }
+      await sendPassiveMsg(event, "content", "处理时遇到错误，请稍后重试", false).void();
+      throw e;
+    }
   });
 
   // emitter.on("*", (data) => {
