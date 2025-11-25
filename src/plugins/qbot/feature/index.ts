@@ -226,6 +226,21 @@ const unique = (arr: string[]) => Array.from(new Set(arr));
 
 export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, tenmiku: TenMiku) {
   const logger = qbot.logger.head(qbot.api.sandbox ? { sandbox: qbot.api.sandbox } : {});
+
+  // Webhook verification handler
+
+  emitter.handle("webhook:verifycallback", async (data, c, _next) => {
+    const validPayload = VerifyRequestSchema.parse(data.d);
+    const sig = calcSign(c, validPayload.event_ts, validPayload.plain_token);
+    const res: VerifyResponse = {
+      plain_token: validPayload.plain_token,
+      signature: sig,
+    };
+    return c.json(res);
+  });
+
+  // Command handler
+
   const calcHashKey = () =>
     sha256(new TextEncoder().encode(qbot.api.getApiEnv().appSecret))
       .toBase64()
@@ -263,7 +278,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(
         data,
         "content",
-        [`当前服务区偏好：〔${SERVER_REGION_TRANSLATION[region]}〕 ${region}`, help()].join("\n")
+        [`当前服务区偏好为〔${SERVER_REGION_TRANSLATION[region]}〕${region}`, help()].join("\n")
       ).void();
     }
     const region = ctx.restArgs[0]!.trim().toLowerCase();
@@ -272,7 +287,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       return await sendPassiveMsg(
         data,
         "content",
-        `已将默认服务区偏好设置为：〔${SERVER_REGION_TRANSLATION[region]}〕 (${region})`
+        `已将默认服务区偏好设置为〔${SERVER_REGION_TRANSLATION[region]}〕${region}`
       ).void();
     }
     return await sendPassiveMsg(data, "content", help()).void();
@@ -549,7 +564,7 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
 
     const searchResult = filterSearchResults(await tenmiku.utils.at(region).search(musicName));
     if (searchResult.length === 0) {
-      return await sendPassiveMsg(event, "content", `未搜索到相关歌曲：${musicName}`).void();
+      return await sendPassiveMsg(event, "content", "未搜索到相关歌曲").void();
     }
 
     // same scores as the top
@@ -654,14 +669,4 @@ export function registerEmitter(emitter: QBotEventEmitter, qbot: QbotPlugin, ten
       }
     })
   );
-
-  emitter.handle("webhook:verifycallback", async (data, c, _next) => {
-    const validPayload = VerifyRequestSchema.parse(data.d);
-    const sig = calcSign(c, validPayload.event_ts, validPayload.plain_token);
-    const res: VerifyResponse = {
-      plain_token: validPayload.plain_token,
-      signature: sig,
-    };
-    return c.json(res);
-  });
 }
